@@ -8,7 +8,13 @@ import warnings
 from datetime import datetime, timedelta
 import pytz
 
-# 隱藏 Google SDK 與 Scrapling 的無害警告，保持 GitHub 終端機日誌乾淨
+# 覆寫內建的 print 函數，強制加上 flush=True，確保 GitHub Actions 能即時印出 Sleep 日誌而不卡頓
+import builtins
+def print(*args, **kwargs):
+    kwargs.setdefault('flush', True)
+    builtins.print(*args, **kwargs)
+
+# 隱藏 Google SDK 與 Scrapling 的無害警告
 warnings.filterwarnings("ignore")
 
 from google import genai
@@ -76,9 +82,10 @@ def execute_single_scrape(time_range_msg):
     selected_sources = random.sample(valid_sources, selected_count)
     print(f"🎲 本輪隨機抽出來源：{[s['name'] for s in selected_sources]}")
 
-    # 【重要修復】把 impersonate="chrome" 加回來，這是破解 401/400 防火牆的關鍵！
+    # 乾淨地設定防護指紋 (消除警告)
     fetcher = Fetcher()
     fetcher.configure(impersonate="chrome")
+    
     raw_news = []
 
     for src in selected_sources:
@@ -114,7 +121,6 @@ def execute_single_scrape(time_range_msg):
         print("本輪無新資訊需要處理。")
         return
 
-    # --- 呼叫 Gemini 2.5 Flash AI 分析 ---
     api_key = os.getenv("GEMINI_API_KEY")
     keywords = os.getenv("BULLISH_KEYWORDS", "利好, 增長, 大行唱好")
     
@@ -163,7 +169,6 @@ def execute_single_scrape(time_range_msg):
 
     print(f"✨ AI (Gemini 2.5 Flash) 篩選出 {len(ai_results)} 條利好消息")
 
-    # --- 飛書推送與跨來源事件去重 ---
     webhook = os.getenv("FEISHU_WEBHOOK")
     if not webhook:
         print("⚠ 尚未設定 FEISHU_WEBHOOK，略過發送。")
@@ -222,6 +227,13 @@ def main():
     session_name, end_time = get_session_window()
     print(f"🌟 啟動時段：【{session_name}】，預計運行至 HKT: {end_time.strftime('%H:%M:%S')}")
 
+    # 首次啟動時，先隨機休眠 (0~15 分鐘)，徹底消除固定時間啟動的規律
+    initial_sleep = random.randint(0, 15 * 60)
+    first_run_time = datetime.now(HKT) + timedelta(seconds=initial_sleep)
+    print(f"🎲 [首次排程] 第一波隨機爬取時間定於 HKT: {first_run_time.strftime('%H:%M:%S')}")
+    print(f"💤 [狀態] 系統正在 Sleep 待機中... (預計等待 {initial_sleep} 秒 / 約 {initial_sleep // 60} 分鐘)")
+    time.sleep(initial_sleep)
+
     while True:
         now = datetime.now(HKT)
         if now >= end_time:
@@ -239,12 +251,15 @@ def main():
         if now + timedelta(seconds=sleep_seconds) > end_time:
             remaining = (end_time - now).total_seconds()
             if remaining > 600:
-                print(f"💤 本時段即將結束，休眠剩餘 {int(remaining)} 秒至結束...")
+                next_run_time = now + timedelta(seconds=remaining)
+                print(f"🎲 [末次排程] 本時段即將結束，最後一次動作時間為 HKT: {next_run_time.strftime('%H:%M:%S')}")
+                print(f"💤 [狀態] 系統正在 Sleep 待機中... (休眠剩餘 {int(remaining)} 秒至時段結束)")
                 time.sleep(remaining)
             break
 
         next_run_time = now + timedelta(seconds=sleep_seconds)
-        print(f"💤 進入休眠，下一次隨機執行時間為 HKT: {next_run_time.strftime('%H:%M:%S')} (等待約 {sleep_seconds // 60} 分鐘)...")
+        print(f"🎲 [下一輪排程] 隨機執行時間定於 HKT: {next_run_time.strftime('%H:%M:%S')}")
+        print(f"💤 [狀態] 系統正在 Sleep 待機中... (等待 {sleep_seconds} 秒 / 約 {sleep_seconds // 60} 分鐘)")
         time.sleep(sleep_seconds)
 
 if __name__ == "__main__":
