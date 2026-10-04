@@ -2,18 +2,29 @@ name: Stock News Scraper
 
 on:
   schedule:
-    - cron: '0 0 * * 1-5'  # 週一至週五定時執行
-  workflow_dispatch:         # 允許在網頁手動點擊「Run workflow」測試
+    # 週一至週五，UTC 00:00 執行（相當於台灣/香港早上 08:00 開盤前）
+    - cron: '0 0 * * 1-5'
+  workflow_dispatch: # 支援在 GitHub 網頁手動點擊按鈕執行
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 下載倉庫代碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: 安裝 Scrapling
-        run: pip install scrapling
-      - name: 執行爬蟲
+          cache: 'pip'
+
+      - name: 安裝 Scrapling 及所需底層依賴
+        run: |
+          python -m pip install --upgrade pip
+          # 安裝 scrapling 以及必備的 curl_cffi 底層套件
+          pip install scrapling curl_cffi
+
+      - name: 執行股票爬蟲
         run: python main.py
