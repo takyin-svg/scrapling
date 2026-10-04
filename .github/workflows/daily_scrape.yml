@@ -30,7 +30,8 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "scrapling[all]" curl_cffi playwright patchright browserforge requests google-generativeai pytz
+          # 【修改點 1】將 google-generativeai 替換為最新的 google-genai
+          pip install "scrapling[all]" curl_cffi playwright patchright browserforge requests google-genai pytz
 
       - name: Run Scraper Loop
         env:
@@ -38,3 +39,14 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           BULLISH_KEYWORDS: ${{ vars.BULLISH_KEYWORDS }}
         run: python main.py
+
+      # 【修改點 2】將執行完畢的 history.json 寫回倉庫，保留去重記憶
+      - name: Commit history to avoid duplicates
+        if: always() # 確保即使提早結束或超時，也會嘗試執行這一步存檔
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add history.json
+          # 如果檔案沒有變動，git commit 會報錯，所以加上 || true 允許忽略錯誤
+          git commit -m "Auto-update scraped history [skip ci]" || true
+          git push
