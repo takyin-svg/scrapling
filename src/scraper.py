@@ -1,61 +1,33 @@
-import random
-import time
-from scrapling import Fetcher
-from src.config import NEWS_SOURCES
+import os
+import pytz
 
-class HKStockScraper:
-    def __init__(self):
-        self.fetcher = Fetcher(impersonate="chrome")
+# --- 基礎設定 ---
+HKT = pytz.timezone('Asia/Hong_Kong')
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK")
+HISTORY_FILE = "data/history.json"
 
-    def fetch_all(self) -> list[dict]:
-        valid_sources = [s for s in NEWS_SOURCES if s["url"]]
-        selected_sources = random.sample(valid_sources, min(random.randint(3, 5), len(valid_sources)))
-        print(f"🎲 本輪隨機抽取抓取源：{[s['name'] for s in selected_sources]}")
+# --- AI 與推送門檻 ---
+MIN_SCORE = 85           
+MIN_CONFIDENCE = 70      
 
-        raw_news = []
-        for src in selected_sources:
-            success = False
-            for attempt in range(1, 4):
-                try:
-                    page = self.fetcher.get(src["url"]) 
-                    items = page.css(src["item"])
-                    
-                    extracted_count = 0
-                    for it in items[:30]:
-                        title_els = it.css(src["title"])
-                        link_els = it.css(src["link"])
-                        
-                        # 正確使用 Python 物件來提取文字
-                        t = title_els[0].text if title_els else it.text
-                        
-                        # 正確提取超連結屬性
-                        l = ""
-                        if link_els and hasattr(link_els[0], 'attrib') and 'href' in link_els[0].attrib:
-                            l = link_els[0].attrib['href']
-                        elif hasattr(it, 'attrib') and 'href' in it.attrib:
-                            l = it.attrib['href']
-                        
-                        if t and t.strip():
-                            t = t.strip()
-                            l = l.strip() if l and l.startswith("http") else src["url"].rstrip('/') + '/' + (l.strip().lstrip('/') if l else '')
-                            raw_news.append({"title": t, "link": l, "source": src["name"]})
-                            extracted_count += 1
-                                
-                    if extracted_count > 0:
-                        success = True
-                        print(f"  ✅ 成功從 [{src['name']}] 抓取 {extracted_count} 條資訊")
-                        break
-                    else:
-                        # 終極偵錯：印出網頁真實 HTML，看是不是遇到 Cloudflare 驗證碼
-                        preview = page.text[:150].replace('\n', ' ') if hasattr(page, 'text') else "無內容"
-                        raise Exception(f"未匹配到新聞。HTML預覽: {preview}")
+# --- 本地初篩過濾器 ---
+HK_KEYWORDS = [
+    "港股", "恆指", "科指", "騰訊", "阿里", "美團", "匯豐", "平保", 
+    "中移動", "大行", "目標價", ".HK", "港交所", "中海油", "比亞迪"
+]
+BASIC_BULLISH = [
+    "升", "漲", "高", "盈", "利", "好", "增", "回購", 
+    "派息", "中標", "突破", "超預期", "扭虧", "激勵"
+]
 
-                except Exception as e:
-                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:120]}")
-                    time.sleep(2)
-                    
-            if not success:
-                print(f"  ❌ [{src['name']}] 重試 3 次皆失敗，已自動跳過")
-                
-        print(f"📥 總計：全網共抓取到 {len(raw_news)} 條原始資訊")
-        return raw_news
+# --- 抓取源設定 (【完美還原】：使用你早上測試成功的 Scrapy 語法) ---
+NEWS_SOURCES = [
+    {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "金吾財訊", "url": "https://www.jwview.com/", "item": "div.news-item", "title": "a.title::text", "link": "a.title::attr(href)"},
+    {"name": "Reuters 路透社", "url": "https://www.reuters.com/markets/asia/", "item": "li.story-collection__story", "title": "a[data-testid='Heading']::text", "link": "a[data-testid='Heading']::attr(href)"},
+    {"name": "RTHK 財經", "url": "https://news.rthk.hk/rthk/ch/finance", "item": "div.ns2-inner", "title": "div.ns2-title a::text", "link": "div.ns2-title a::attr(href)"}
+]
