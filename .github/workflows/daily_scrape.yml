@@ -4,7 +4,7 @@ on:
   schedule:
     # 週一至週五，UTC 00:00 執行（相當於台灣/香港早上 08:00 開盤前）
     - cron: '0 0 * * 1-5'
-  workflow_dispatch: # 支援在 GitHub 網頁手動點擊按鈕執行
+  workflow_dispatch: # 允許在網頁手動點擊按鈕執行測試
 
 jobs:
   scrape:
@@ -18,12 +18,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          # 這裡移除了 cache: 'pip'，避免找不到 requirements.txt 報錯
 
       - name: 安裝 Scrapling 及所需底層依賴
         run: |
           python -m pip install --upgrade pip
-          # 安裝 scrapling 以及必備的 curl_cffi 底層套件
-          pip install scrapling curl_cffi
+          # 一次裝齊所有需要的依賴，解決 curl_cffi 與 playwright 找不到的問題
+          pip install scrapling curl_cffi playwright
 
-      - name: 執行股票爬蟲
+      - name: 執行股票新聞爬蟲
         run: python main.py
