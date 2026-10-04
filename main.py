@@ -122,7 +122,7 @@ def execute_single_scrape(time_range_msg):
         return
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
+    model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
 
     ai_prompt = f"""
     你是一個專業的港股分析師。請分析以下 JSON 格式的新聞標題與連結。
