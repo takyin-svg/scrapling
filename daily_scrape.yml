@@ -1,0 +1,19 @@
+name: Stock News Scraper
+
+on:
+  schedule:
+    - cron: '0 0 * * 1-5'  # 週一至週五定時執行
+  workflow_dispatch:         # 允許在網頁手動點擊「Run workflow」測試
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安裝 Scrapling
+        run: pip install scrapling
+      - name: 執行爬蟲
+        run: python main.py
