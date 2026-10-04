@@ -77,7 +77,8 @@ def execute_single_scrape(time_range_msg):
     print(f"🎲 本輪隨機抽出來源：{[s['name'] for s in selected_sources]}")
 
     # 【重要修復】把 impersonate="chrome" 加回來，這是破解 401/400 防火牆的關鍵！
-    fetcher = Fetcher(impersonate="chrome")
+    fetcher = Fetcher()
+    fetcher.configure(impersonate="chrome")
     raw_news = []
 
     for src in selected_sources:
