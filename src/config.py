@@ -21,13 +21,13 @@ BASIC_BULLISH = [
     "派息", "中標", "突破", "超預期", "扭虧", "激勵"
 ]
 
-# --- 抓取源設定 (純淨版 CSS 選擇器) ---
+# --- 抓取源設定 (【完美還原】：使用你早上測試成功的 Scrapy 語法) ---
 NEWS_SOURCES = [
-    {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a", "link": "a"},
-    {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a", "link": "a"},
-    {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a", "link": "a"},
-    {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a", "link": "a"},
-    {"name": "金吾財訊", "url": "https://www.jwview.com/", "item": "div.news-item", "title": "a.title", "link": "a.title"},
-    {"name": "Reuters 路透社", "url": "https://www.reuters.com/markets/asia/", "item": "li.story-collection__story", "title": "a[data-testid='Heading']", "link": "a[data-testid='Heading']"},
-    {"name": "RTHK 財經", "url": "https://news.rthk.hk/rthk/ch/finance", "item": "div.ns2-inner", "title": "div.ns2-title a", "link": "div.ns2-title a"}
+    {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
+    {"name": "金吾財訊", "url": "https://www.jwview.com/", "item": "div.news-item", "title": "a.title::text", "link": "a.title::attr(href)"},
+    {"name": "Reuters 路透社", "url": "https://www.reuters.com/markets/asia/", "item": "li.story-collection__story", "title": "a[data-testid='Heading']::text", "link": "a[data-testid='Heading']::attr(href)"},
+    {"name": "RTHK 財經", "url": "https://news.rthk.hk/rthk/ch/finance", "item": "div.ns2-inner", "title": "div.ns2-title a::text", "link": "div.ns2-title a::attr(href)"}
 ]
