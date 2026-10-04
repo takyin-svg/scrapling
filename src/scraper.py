@@ -5,7 +5,6 @@ from src.config import NEWS_SOURCES
 
 class HKStockScraper:
     def __init__(self):
-        # 找回你早上測試成功的輕量級引擎！速度極快且自帶反爬偽裝
         self.fetcher = Fetcher(impersonate="chrome")
 
     def fetch_all(self) -> list[dict]:
@@ -23,13 +22,22 @@ class HKStockScraper:
                     
                     extracted_count = 0
                     for it in items[:30]:
-                        # 完全採用你早上測試成功的選擇器邏輯
-                        t = it.css(src["title"]).get() or it.text
-                        l = it.css(src["link"]).get() or src["url"]
+                        title_els = it.css(src["title"])
+                        link_els = it.css(src["link"])
                         
-                        if t:
+                        # 正確使用 Python 物件來提取文字
+                        t = title_els[0].text if title_els else it.text
+                        
+                        # 正確提取超連結屬性
+                        l = ""
+                        if link_els and hasattr(link_els[0], 'attrib') and 'href' in link_els[0].attrib:
+                            l = link_els[0].attrib['href']
+                        elif hasattr(it, 'attrib') and 'href' in it.attrib:
+                            l = it.attrib['href']
+                        
+                        if t and t.strip():
                             t = t.strip()
-                            l = l.strip() if l.startswith("http") else src["url"].rstrip('/') + '/' + l.strip().lstrip('/')
+                            l = l.strip() if l and l.startswith("http") else src["url"].rstrip('/') + '/' + (l.strip().lstrip('/') if l else '')
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
                             extracted_count += 1
                                 
@@ -38,10 +46,12 @@ class HKStockScraper:
                         print(f"  ✅ 成功從 [{src['name']}] 抓取 {extracted_count} 條資訊")
                         break
                     else:
-                        raise Exception("成功連線，但未解析到新聞 (可能遇到JS動態渲染或選擇器失效)")
+                        # 終極偵錯：印出網頁真實 HTML，看是不是遇到 Cloudflare 驗證碼
+                        preview = page.text[:150].replace('\n', ' ') if hasattr(page, 'text') else "無內容"
+                        raise Exception(f"未匹配到新聞。HTML預覽: {preview}")
 
                 except Exception as e:
-                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:40]}")
+                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:120]}")
                     time.sleep(2)
                     
             if not success:
