@@ -7,10 +7,8 @@ import requests
 from datetime import datetime, timedelta
 import pytz
 
-# 載入全新的 Google GenAI SDK
 from google import genai
 from google.genai import types
-
 from scrapling import Fetcher
 
 # --- 1. 設定香港時區 ---
@@ -22,29 +20,21 @@ def get_session_window():
     hour = now.hour
     minute = now.minute
 
-    # 夜間時段: 23:00 - 02:00 (隔天)
     if hour >= 22 or hour < 2:
         end_time = now.replace(hour=2, minute=0, second=0, microsecond=0)
-        if hour >= 22:
-            end_time += timedelta(days=1)
+        if hour >= 22: end_time += timedelta(days=1)
         return "夜間 (昨收16:00後至此刻)", end_time
-
-    # 早盤前: 06:00 - 10:00
     elif 5 <= hour < 10:
         end_time = now.replace(hour=10, minute=0, second=0, microsecond=0)
         return "早盤前 (橫跨週末/昨夜至今日開盤)", end_time
-
-    # 盤中: 10:30 - 14:00
     elif (hour == 10 and minute >= 20) or (11 <= hour < 14):
         end_time = now.replace(hour=14, minute=0, second=0, microsecond=0)
         return "盤中 (10:30-14:00)", end_time
-
-    # 若為手動觸發測試，預設運行 60 分鐘
     else:
         return "自訂/測試時段", now + timedelta(minutes=60)
 
 
-# --- 3. 核心執行邏輯 (爬取 -> AI分析 -> 去重 -> 飛書發送) ---
+# --- 3. 核心執行邏輯 ---
 def execute_single_scrape(time_range_msg):
     now_str = datetime.now(HKT).strftime('%Y-%m-%d %H:%M:%S')
     print(f"\n" + "="*50)
@@ -64,15 +54,13 @@ def execute_single_scrape(time_range_msg):
             
     history_urls = [record.get("url") for record in history_records if "url" in record]
 
-    # --- 更新 10 大財經新聞源 (修正了 404 與 400 的網址) ---
+    # --- 【修改點 1】更新 10 大財經新聞源，修復 404 失效網址 ---
     sources = [
-        {"name": "Yahoo 財經 (港股)", "url": "https://hk.finance.yahoo.com/topic/hk-stock-news/", "item": "li.stream-item", "title": "h3::text", "link": "a::attr(href)"},
+        {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a::text", "link": "a::attr(href)"}, # 改抓首頁新聞模塊
         {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
         {"name": "智通財經", "url": "https://www.zhitongcaijing.com/hknews.html", "item": "div.news-list-item", "title": "h2.title::text", "link": "a::attr(href)"},
-        # 更新格隆匯快訊
-        {"name": "格隆匯", "url": "https://www.gelonghui.com/live", "item": "div.live-item", "title": "div.content::text", "link": "a::attr(href)"},
-        # 更新東方財富港股板塊
-        {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/cggxw.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
+        {"name": "格隆匯", "url": "https://www.gelonghui.com/live", "item": "div.live-item", "title": "div.content::text", "link": "a::attr(href)"}, # 強制 HTTPS
+        {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"}, # 更新為有效的港股路由
         {"name": "財聯社", "url": "https://www.cls.cn/telegraph", "item": "div.telegraph-list", "title": "span.telegraph-content::text", "link": "a::attr(href)"},
         {"name": "金十數據", "url": "https://www.jin10.com/", "item": "div.jin10-news-item", "title": "div.jin10-news-text::text", "link": "a::attr(href)"},
         {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
@@ -85,18 +73,23 @@ def execute_single_scrape(time_range_msg):
     selected_sources = random.sample(valid_sources, selected_count)
     print(f"🎲 本輪隨機抽出來源：{[s['name'] for s in selected_sources]}")
 
-    fetcher = Fetcher()
+    # --- 【修改點 2】啟用 Chrome 指紋偽裝，解決 400/401 反爬蟲，並修正 Timeout 語法 ---
+    fetcher = Fetcher(impersonate="chrome")
+    fetcher.configure(timeout=25) 
+    
     raw_news = []
 
     for src in selected_sources:
         success = False
         for attempt in range(1, 4):
             try:
-                page = fetcher.get(src["url"], timeout=20)
+                # 這裡去掉了已棄用的 timeout=20，交由 configure 統一管理
+                page = fetcher.get(src["url"]) 
                 items = page.css(src["item"])
                 
                 for it in items[:15]:
-                    t = it.css(src["title"]).get()
+                    # 有些網址的標題不在 a 標籤內，做個防呆備援
+                    t = it.css(src["title"]).get() or it.text
                     l = it.css(src["link"]).get() or src["url"]
                     
                     if t:
@@ -121,7 +114,7 @@ def execute_single_scrape(time_range_msg):
         print("本輪無新資訊需要處理。")
         return
 
-    # --- 呼叫全新的 Google GenAI (gemini-2.5-flash) 分析 ---
+    # --- 呼叫 Gemini 2.5 Flash AI 分析 ---
     api_key = os.getenv("GEMINI_API_KEY")
     keywords = os.getenv("BULLISH_KEYWORDS", "利好, 增長, 大行唱好")
     
@@ -129,7 +122,6 @@ def execute_single_scrape(time_range_msg):
         print("⚠️ 尚未設定 GEMINI_API_KEY，略過 AI 分析。")
         return
 
-    # 初始化全新的 Client
     client = genai.Client(api_key=api_key)
 
     ai_prompt = f"""
@@ -154,11 +146,9 @@ def execute_single_scrape(time_range_msg):
     """
 
     ai_results = []
-    # 批次傳送，每次 10 條
     for i in range(0, len(raw_news), 10):
         batch = raw_news[i:i+10]
         try:
-            # 使用全新官方 API 寫法
             res = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=ai_prompt + "\n資料:\n" + json.dumps(batch, ensure_ascii=False),
