@@ -5,7 +5,12 @@ from src.config import NEWS_SOURCES
 
 class HKStockScraper:
     def __init__(self):
-        self.fetcher = Fetcher(impersonate="chrome")
+        # 【破甲升級】：注入香港語系與本地 Referer，降低美國 IP 被秒殺的機率
+        self.headers = {
+            "Accept-Language": "zh-HK,zh-TW;q=0.9,zh-CN;q=0.8,zh;q=0.7,en-US;q=0.6",
+            "Referer": "https://www.google.com.hk/"
+        }
+        self.fetcher = Fetcher(impersonate="chrome", headers=self.headers)
 
     def fetch_all(self) -> list[dict]:
         valid_sources = [s for s in NEWS_SOURCES if s["url"]]
@@ -17,16 +22,15 @@ class HKStockScraper:
             success = False
             for attempt in range(1, 4):
                 try:
-                    # 獲取網頁
                     page = self.fetcher.get(src["url"]) 
                     items = page.css(src["item"])
                     
                     extracted_count = 0
                     for it in items[:30]:
-                        t = it.css(src["title"]).get() or getattr(it, 'text', '')
-                        l = it.css(src["link"]).get() or src["url"]
+                        t = it.css(src["title"]).get()
+                        l = it.css(src["link"]).get()
                         
-                        if t:
+                        if t and str(t).strip():
                             t = str(t).strip()
                             l = str(l).strip() if l and str(l).startswith("http") else src["url"].rstrip('/') + '/' + str(l).strip().lstrip('/')
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
@@ -37,14 +41,12 @@ class HKStockScraper:
                         print(f"  ✅ 成功從 [{src['name']}] 抓取 {extracted_count} 條資訊")
                         break
                     else:
-                        # 🚨 終極偵錯核心：印出 HTTP 狀態碼與網頁真實 HTML 前 200 字
-                        status = page.status_code if hasattr(page, 'status_code') else 'Unknown'
-                        preview = page.text[:200].replace('\n', ' ') if hasattr(page, 'text') else "無內容"
-                        raise Exception(f"HTTP {status} | HTML預覽: {preview}")
+                        # 🚨 網頁標題探測器：看穿美國 IP 到底收到了什麼畫面
+                        page_title = page.css("title::text").get() or "無標題 (可能被強制阻斷)"
+                        raise Exception(f"未找到新聞區塊。網頁標題顯示為: 【{page_title}】 (高度疑似 GitHub 美國 IP 遭封鎖)")
 
                 except Exception as e:
-                    # 把錯誤訊息印長一點，讓我們看清楚 HTML
-                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:250]}")
+                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:150]}")
                     time.sleep(2)
                     
             if not success:
