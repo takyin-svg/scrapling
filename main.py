@@ -54,13 +54,12 @@ def execute_single_scrape(time_range_msg):
             
     history_urls = [record.get("url") for record in history_records if "url" in record]
 
-    # --- 【修改點 1】更新 10 大財經新聞源，修復 404 失效網址 ---
     sources = [
-        {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a::text", "link": "a::attr(href)"}, # 改抓首頁新聞模塊
+        {"name": "Yahoo 財經", "url": "https://hk.finance.yahoo.com/", "item": "h3", "title": "a::text", "link": "a::attr(href)"},
         {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
         {"name": "智通財經", "url": "https://www.zhitongcaijing.com/hknews.html", "item": "div.news-list-item", "title": "h2.title::text", "link": "a::attr(href)"},
-        {"name": "格隆匯", "url": "https://www.gelonghui.com/live", "item": "div.live-item", "title": "div.content::text", "link": "a::attr(href)"}, # 強制 HTTPS
-        {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"}, # 更新為有效的港股路由
+        {"name": "格隆匯", "url": "https://www.gelonghui.com/live", "item": "div.live-item", "title": "div.content::text", "link": "a::attr(href)"},
+        {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/chgsh.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
         {"name": "財聯社", "url": "https://www.cls.cn/telegraph", "item": "div.telegraph-list", "title": "span.telegraph-content::text", "link": "a::attr(href)"},
         {"name": "金十數據", "url": "https://www.jin10.com/", "item": "div.jin10-news-item", "title": "div.jin10-news-text::text", "link": "a::attr(href)"},
         {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
@@ -73,22 +72,18 @@ def execute_single_scrape(time_range_msg):
     selected_sources = random.sample(valid_sources, selected_count)
     print(f"🎲 本輪隨機抽出來源：{[s['name'] for s in selected_sources]}")
 
-    # --- 【修改點 2】啟用 Chrome 指紋偽裝，解決 400/401 反爬蟲，並修正 Timeout 語法 ---
-    fetcher = Fetcher(impersonate="chrome")
-    fetcher.configure(timeout=25) 
-    
+    # 移除會導致崩潰的設定，使用最基礎穩定的初始化
+    fetcher = Fetcher()
     raw_news = []
 
     for src in selected_sources:
         success = False
         for attempt in range(1, 4):
             try:
-                # 這裡去掉了已棄用的 timeout=20，交由 configure 統一管理
                 page = fetcher.get(src["url"]) 
                 items = page.css(src["item"])
                 
                 for it in items[:15]:
-                    # 有些網址的標題不在 a 標籤內，做個防呆備援
                     t = it.css(src["title"]).get() or it.text
                     l = it.css(src["link"]).get() or src["url"]
                     
@@ -107,7 +102,7 @@ def execute_single_scrape(time_range_msg):
                 time.sleep(2)
                 
         if not success:
-            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已跳過")
+            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已自動跳過")
 
     print(f"📥 共抓取到 {len(raw_news)} 條未處理的潛在新資訊")
     if not raw_news:
@@ -215,6 +210,7 @@ def execute_single_scrape(time_range_msg):
 
     print(f"🚀 飛書成功發送 {pushed_count} 條不重複的利好消息")
 
+    # 在寫入檔案前確保檔案存在，即使沒抓到任何新資料，也把讀取進來的空陣列寫回去
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(history_records[-500:], f, ensure_ascii=False)
 
