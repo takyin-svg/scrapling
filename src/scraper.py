@@ -5,7 +5,6 @@ from src.config import NEWS_SOURCES
 
 class HKStockScraper:
     def __init__(self):
-        # 底層套用 Chrome 指紋，突破 WAF 防火牆
         self.fetcher = Fetcher(impersonate="chrome")
 
     def fetch_all(self) -> list[dict]:
@@ -21,24 +20,41 @@ class HKStockScraper:
                     page = self.fetcher.get(src["url"]) 
                     items = page.css(src["item"])
                     
-                    # 擴大至前 30 條，防止被美股/宏觀新聞洗版
+                    # 【修復重點 1】：防呆機制！如果抓下來是空的，主動報錯觸發重試，拒絕「假成功」
+                    if not items:
+                        raise Exception("找不到新聞區塊 (可能網頁改版或被JS渲染擋下)")
+                    
+                    extracted_count = 0
                     for it in items[:30]:
-                        t = it.css(src["title"]).get() or it.text
-                        l = it.css(src["link"]).get() or src["url"]
-                        if t:
+                        title_els = it.css(src["title"])
+                        link_els = it.css(src["link"])
+                        
+                        # 【修復重點 2】：使用正確的語法提取純文字 (text) 與網址屬性 (attrib)
+                        t = title_els[0].text if title_els else it.text
+                        
+                        l = ""
+                        if link_els and 'href' in link_els[0].attrib:
+                            l = link_els[0].attrib['href']
+                        elif 'href' in it.attrib:
+                            l = it.attrib['href']
+                        
+                        l = l or src["url"]
+                        
+                        if t and t.strip():
                             t = t.strip()
                             l = l.strip() if l.startswith("http") else src["url"].rstrip('/') + '/' + l.strip().lstrip('/')
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
+                            extracted_count += 1
                                 
                     success = True
-                    print(f"  ✅ 成功從 [{src['name']}] 爬取數據")
+                    print(f"  ✅ 成功從 [{src['name']}] 抓取 {extracted_count} 條資訊")
                     break
                 except Exception as e:
-                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗")
+                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:40]}")
                     time.sleep(2)
                     
             if not success:
                 print(f"  ❌ [{src['name']}] 重試 3 次皆失敗，已自動跳過")
                 
-        print(f"📥 總計：共抓取到 {len(raw_news)} 條原始資訊")
+        print(f"📥 總計：全網共抓取到 {len(raw_news)} 條原始資訊")
         return raw_news
