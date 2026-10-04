@@ -4,8 +4,12 @@ import json
 import time
 import random
 import requests
+import warnings
 from datetime import datetime, timedelta
 import pytz
+
+# 隱藏 Google SDK 與 Scrapling 的無害警告，保持 GitHub 終端機日誌乾淨
+warnings.filterwarnings("ignore")
 
 from google import genai
 from google.genai import types
@@ -72,8 +76,8 @@ def execute_single_scrape(time_range_msg):
     selected_sources = random.sample(valid_sources, selected_count)
     print(f"🎲 本輪隨機抽出來源：{[s['name'] for s in selected_sources]}")
 
-    # 移除會導致崩潰的設定，使用最基礎穩定的初始化
-    fetcher = Fetcher()
+    # 【重要修復】把 impersonate="chrome" 加回來，這是破解 401/400 防火牆的關鍵！
+    fetcher = Fetcher(impersonate="chrome")
     raw_news = []
 
     for src in selected_sources:
@@ -210,7 +214,6 @@ def execute_single_scrape(time_range_msg):
 
     print(f"🚀 飛書成功發送 {pushed_count} 條不重複的利好消息")
 
-    # 在寫入檔案前確保檔案存在，即使沒抓到任何新資料，也把讀取進來的空陣列寫回去
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(history_records[-500:], f, ensure_ascii=False)
 
