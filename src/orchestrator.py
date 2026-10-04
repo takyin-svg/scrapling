@@ -29,10 +29,11 @@ class Orchestrator:
         print(f"🌟 啟動時段：【{session_name}】，預計運行至 HKT: {end_time.strftime('%H:%M:%S')}")
 
         initial_sleep = random.randint(0, 15 * 60)
-        print(f"🎲 [隨機喚醒] 系統將在 {initial_sleep // 60} 分鐘後開始第一波掃描...")
+        first_run_time = datetime.now(HKT) + timedelta(seconds=initial_sleep)
+        print(f"🎲 [首次排程] 第一波隨機爬取時間定於 HKT: {first_run_time.strftime('%H:%M:%S')}")
+        print(f"💤 [狀態] 系統正在 Sleep 待機中... (預計等待 {initial_sleep} 秒 / 約 {initial_sleep // 60} 分鐘)")
         time.sleep(initial_sleep)
 
-        # 初始化模組
         state_mgr = StateManager()
         scraper = HKStockScraper()
         news_filter = NewsFilter(state_mgr)
@@ -45,24 +46,26 @@ class Orchestrator:
                 break
                 
             print(f"\n==================================================")
-            print(f"⏰ [{now.strftime('%H:%M:%S')} HKT] 啟動抓取循環")
+            print(f"⏰ [{now.strftime('%H:%M:%S')} HKT] 開始執行隨機抽樣爬取！")
+            print(f"==================================================")
             
-            # Step 1: 隱形抓取
+            # Step 1: 抓取
             raw_news = scraper.fetch_all()
             
-            # Step 2: 本地初篩 (零成本)
-            filtered_news = news_filter.apply(raw_news)
+            # Step 2: 過濾
+            if raw_news:
+                filtered_news = news_filter.apply(raw_news)
+                # Step 3 & 4: 分析與推送
+                if filtered_news:
+                    analyzed_news = analyzer.analyze(filtered_news)
+                    notifier.push(analyzed_news)
+                else:
+                    print("🤷‍♂️ 本次抓取沒有符合 [港股+利好] 條件的新鮮資訊，跳過 AI 分析。")
             
-            # Step 3: AI 深度分析
-            if filtered_news:
-                analyzed_news = analyzer.analyze(filtered_news)
-                # Step 4: 飛書推送
-                notifier.push(analyzed_news)
-            
-            # 保存狀態
+            # 保存歷史紀錄
             state_mgr.save()
             
-            # 計算下一次隨機休眠
+            # 計算下一次排程
             now = datetime.now(HKT)
             if now >= end_time:
                 break
@@ -71,11 +74,15 @@ class Orchestrator:
             if now + timedelta(seconds=sleep_seconds) > end_time:
                 remaining = (end_time - now).total_seconds()
                 if remaining > 300:
-                    print(f"💤 接近時段尾聲，休眠剩餘 {int(remaining)} 秒...")
+                    next_run_time = now + timedelta(seconds=remaining)
+                    print(f"🎲 [末次排程] 本時段即將結束，最後一次動作時間定於 HKT: {next_run_time.strftime('%H:%M:%S')}")
+                    print(f"💤 [狀態] 系統正在 Sleep 待機中... (休眠剩餘 {int(remaining)} 秒至時段結束)")
                     time.sleep(remaining)
                 break
                 
-            print(f"💤 [進入休眠] 等待約 {sleep_seconds // 60} 分鐘...")
+            next_run_time = now + timedelta(seconds=sleep_seconds)
+            print(f"\n🎲 [下一輪排程] 隨機執行時間定於 HKT: {next_run_time.strftime('%H:%M:%S')}")
+            print(f"💤 [狀態] 系統正在 Sleep 待機中... (等待 {sleep_seconds} 秒 / 約 {sleep_seconds // 60} 分鐘)")
             time.sleep(sleep_seconds)
             
         print("🏁 當前排程時段結束，程式平穩退出。")
