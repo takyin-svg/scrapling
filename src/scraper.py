@@ -31,13 +31,14 @@ class HKStockScraper:
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
                                 
                     success = True
-                    print(f"  ✅ 成功從 {src['name']} 爬取數據")
+                    print(f"  ✅ 成功從 [{src['name']}] 爬取數據")
                     break
                 except Exception as e:
-                    print(f"  ⚠️ {src['name']} 第 {attempt} 次失敗")
+                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗")
                     time.sleep(2)
                     
             if not success:
-                print(f"  ❌ {src['name']} 重試 3 次皆失敗，跳過")
+                print(f"  ❌ [{src['name']}] 重試 3 次皆失敗，已自動跳過")
                 
+        print(f"📥 總計：共抓取到 {len(raw_news)} 條原始資訊")
         return raw_news
