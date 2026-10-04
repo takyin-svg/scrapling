@@ -5,7 +5,6 @@ from src.config import NEWS_SOURCES
 
 class HKStockScraper:
     def __init__(self):
-        # 找回你早上成功破解防爬蟲的隱形戰車！
         self.fetcher = Fetcher(impersonate="chrome")
 
     def fetch_all(self) -> list[dict]:
@@ -18,18 +17,18 @@ class HKStockScraper:
             success = False
             for attempt in range(1, 4):
                 try:
+                    # 獲取網頁
                     page = self.fetcher.get(src["url"]) 
                     items = page.css(src["item"])
                     
                     extracted_count = 0
                     for it in items[:30]:
-                        # 【完美還原】：使用你早上跑通的 `.get()` 語法！
-                        t = it.css(src["title"]).get() or it.text
+                        t = it.css(src["title"]).get() or getattr(it, 'text', '')
                         l = it.css(src["link"]).get() or src["url"]
                         
                         if t:
-                            t = t.strip()
-                            l = l.strip() if l.startswith("http") else src["url"].rstrip('/') + '/' + l.strip().lstrip('/')
+                            t = str(t).strip()
+                            l = str(l).strip() if l and str(l).startswith("http") else src["url"].rstrip('/') + '/' + str(l).strip().lstrip('/')
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
                             extracted_count += 1
                                 
@@ -38,10 +37,14 @@ class HKStockScraper:
                         print(f"  ✅ 成功從 [{src['name']}] 抓取 {extracted_count} 條資訊")
                         break
                     else:
-                        raise Exception("成功連線但未匹配到內容 (版面可能無更新)")
+                        # 🚨 終極偵錯核心：印出 HTTP 狀態碼與網頁真實 HTML 前 200 字
+                        status = page.status_code if hasattr(page, 'status_code') else 'Unknown'
+                        preview = page.text[:200].replace('\n', ' ') if hasattr(page, 'text') else "無內容"
+                        raise Exception(f"HTTP {status} | HTML預覽: {preview}")
 
                 except Exception as e:
-                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:100]}")
+                    # 把錯誤訊息印長一點，讓我們看清楚 HTML
+                    print(f"  ⚠️ [{src['name']}] 第 {attempt} 次抓取失敗: {str(e)[:250]}")
                     time.sleep(2)
                     
             if not success:
