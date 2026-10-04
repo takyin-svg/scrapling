@@ -51,7 +51,7 @@ def execute_single_scrape(time_range_msg):
     history_file = "history.json"
     history_records = []
     
-    # 讀取歷史紀錄 (包含 URL、股票代號、核心事件)
+    # 讀取歷史紀錄
     if os.path.exists(history_file):
         try:
             with open(history_file, "r", encoding="utf-8") as f:
@@ -62,14 +62,21 @@ def execute_single_scrape(time_range_msg):
     # 提取已經爬過的 URL (避免浪費 AI 算力)
     history_urls = [record.get("url") for record in history_records if "url" in record]
 
-    # 10 個源頭清單 (目前預設 3 個真實源頭，其餘留白供後續填寫)
+    # --- 更新 10 大財經新聞源 ---
+    # 註：快訊類(如財聯社/金十)可能只有文字沒有單獨頁面連結，程式會自動處理
     sources = [
         {"name": "Yahoo 財經 (港股)", "url": "https://hk.finance.yahoo.com/topic/hk-stock-news/", "item": "li.stream-item", "title": "h3::text", "link": "a::attr(href)"},
-        {"name": "AASTOCKS 阿思達克", "url": "http://www.aastocks.com/tc/stocks/news/aafn/latest-news", "item": "div.news-list", "title": "div.news-title::text", "link": "a::attr(href)"},
         {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
+        {"name": "智通財經", "url": "https://www.zhitongcaijing.com/hknews.html", "item": "div.news-list-item", "title": "h2.title::text", "link": "a::attr(href)"},
+        {"name": "格隆匯", "url": "https://www.gelonghui.com/news", "item": "section.news-item", "title": "h2::text", "link": "a::attr(href)"},
+        {"name": "東方財富港股", "url": "https://hk.eastmoney.com/news/cggxw.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
+        {"name": "財聯社", "url": "https://www.cls.cn/telegraph", "item": "div.telegraph-list", "title": "span.telegraph-content::text", "link": "a::attr(href)"},
+        {"name": "金十數據", "url": "https://www.jin10.com/", "item": "div.jin10-news-item", "title": "div.jin10-news-text::text", "link": "a::attr(href)"},
+        {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
+        {"name": "金吾財訊", "url": "https://www.jwview.com/", "item": "div.news-item", "title": "a.title::text", "link": "a.title::attr(href)"},
+        {"name": "Reuters 路透社", "url": "https://www.reuters.com/markets/asia/", "item": "li.story-collection__story", "title": "a[data-testid='Heading']::text", "link": "a[data-testid='Heading']::attr(href)"}
     ]
 
-    # 過濾出有填寫 URL 的源頭，並隨機抽取 3 到 5 個
     valid_sources = [s for s in sources if s["url"]]
     selected_count = min(random.randint(3, 5), len(valid_sources))
     selected_sources = random.sample(valid_sources, selected_count)
@@ -86,16 +93,17 @@ def execute_single_scrape(time_range_msg):
                 page = fetcher.get(src["url"], timeout=20)
                 items = page.css(src["item"])
                 
-                # 每個源頭抓最新 15 篇
                 for it in items[:15]:
                     t = it.css(src["title"]).get()
-                    l = it.css(src["link"]).get()
-                    if t and l:
+                    # 若無法獲取獨立連結（如純快訊網頁），則套用主網站 URL 作為來源指引
+                    l = it.css(src["link"]).get() or src["url"]
+                    
+                    if t:
                         t = t.strip()
-                        l = l.strip() if l.startswith("http") else src["url"] + l.strip()
+                        l = l.strip() if l.startswith("http") else src["url"].rstrip('/') + '/' + l.strip().lstrip('/')
                         
-                        # 第一層去重：網址是否抓過
-                        if l not in history_urls:
+                        # 去重：若同一個網址已經抓過，則略過 (對於共用首頁連結的快訊，依賴後方 AI 核心事件去重)
+                        if l not in history_urls or l == src["url"]: 
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
                             
                 success = True
@@ -106,14 +114,14 @@ def execute_single_scrape(time_range_msg):
                 time.sleep(2)
                 
         if not success:
-            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已跳過")
+            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已跳過 (可能遭遇 WAF 防護)")
 
-    print(f"📥 共抓取到 {len(raw_news)} 條未處理的新新聞")
+    print(f"📥 共抓取到 {len(raw_news)} 條未處理的潛在新資訊")
     if not raw_news:
         print("本輪無新資訊需要處理。")
         return
 
-    # --- 呼叫 Gemini AI 分析與提取事件指紋 ---
+    # --- 呼叫 Gemini 2.5 Flash AI 分析 ---
     api_key = os.getenv("GEMINI_API_KEY")
     keywords = os.getenv("BULLISH_KEYWORDS", "利好, 增長, 大行唱好")
     
@@ -122,6 +130,7 @@ def execute_single_scrape(time_range_msg):
         return
 
     genai.configure(api_key=api_key)
+    # 更新為 Gemini 2.5 Flash
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
 
     ai_prompt = f"""
@@ -156,12 +165,12 @@ def execute_single_scrape(time_range_msg):
         except Exception as e:
             print(f"  ❌ AI 分析出錯: {e}")
 
-    print(f"✨ AI 篩選出 {len(ai_results)} 條利好消息")
+    print(f"✨ AI (Gemini 2.5 Flash) 篩選出 {len(ai_results)} 條利好消息")
 
     # --- 飛書推送與跨來源事件去重 ---
     webhook = os.getenv("FEISHU_WEBHOOK")
     if not webhook:
-        print("⚠️ 尚未設定 FEISHU_WEBHOOK，略過發送。")
+        print("⚠️️ 尚未設定 FEISHU_WEBHOOK，略過發送。")
         return
 
     pushed_count = 0
@@ -175,7 +184,6 @@ def execute_single_scrape(time_range_msg):
             for r in history_records
         )
         
-        # 若大盤新聞無法歸類個股，則略過事件去重
         if is_duplicate_event and stock != '大盤/板塊':
             print(f"  ⏭️ 攔截重複事件: {stock} - {event} (已在歷史紀錄中，不重複發送)")
             continue
@@ -242,7 +250,7 @@ def main():
         # 若下次執行時間會超過時段結束點，調整等待時間或直接結束
         if now + timedelta(seconds=sleep_seconds) > end_time:
             remaining = (end_time - now).total_seconds()
-            if remaining > 600: # 如果還剩超過 10 分鐘，休眠到最後一刻再結束
+            if remaining > 600:
                 print(f"💤 本時段即將結束，休眠剩餘 {int(remaining)} 秒至結束...")
                 time.sleep(remaining)
             break
