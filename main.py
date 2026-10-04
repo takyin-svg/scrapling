@@ -6,7 +6,11 @@ import random
 import requests
 from datetime import datetime, timedelta
 import pytz
-import google.generativeai as genai
+
+# 載入全新的 Google GenAI SDK
+from google import genai
+from google.genai import types
+
 from scrapling import Fetcher
 
 # --- 1. 設定香港時區 ---
@@ -51,7 +55,6 @@ def execute_single_scrape(time_range_msg):
     history_file = "history.json"
     history_records = []
     
-    # 讀取歷史紀錄
     if os.path.exists(history_file):
         try:
             with open(history_file, "r", encoding="utf-8") as f:
@@ -59,17 +62,17 @@ def execute_single_scrape(time_range_msg):
         except Exception:
             history_records = []
             
-    # 提取已經爬過的 URL (避免浪費 AI 算力)
     history_urls = [record.get("url") for record in history_records if "url" in record]
 
-    # --- 更新 10 大財經新聞源 ---
-    # 註：快訊類(如財聯社/金十)可能只有文字沒有單獨頁面連結，程式會自動處理
+    # --- 更新 10 大財經新聞源 (修正了 404 與 400 的網址) ---
     sources = [
         {"name": "Yahoo 財經 (港股)", "url": "https://hk.finance.yahoo.com/topic/hk-stock-news/", "item": "li.stream-item", "title": "h3::text", "link": "a::attr(href)"},
         {"name": "Sina 新浪港股", "url": "https://finance.sina.com.cn/stock/hkstock/", "item": "ul.list_009 li", "title": "a::text", "link": "a::attr(href)"},
         {"name": "智通財經", "url": "https://www.zhitongcaijing.com/hknews.html", "item": "div.news-list-item", "title": "h2.title::text", "link": "a::attr(href)"},
-        {"name": "格隆匯", "url": "https://www.gelonghui.com/news", "item": "section.news-item", "title": "h2::text", "link": "a::attr(href)"},
-        {"name": "東方財富港股", "url": "https://hk.eastmoney.com/news/cggxw.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
+        # 更新格隆匯快訊
+        {"name": "格隆匯", "url": "https://www.gelonghui.com/live", "item": "div.live-item", "title": "div.content::text", "link": "a::attr(href)"},
+        # 更新東方財富港股板塊
+        {"name": "東方財富港股", "url": "https://finance.eastmoney.com/a/cggxw.html", "item": "div.newsList ul li", "title": "a::text", "link": "a::attr(href)"},
         {"name": "財聯社", "url": "https://www.cls.cn/telegraph", "item": "div.telegraph-list", "title": "span.telegraph-content::text", "link": "a::attr(href)"},
         {"name": "金十數據", "url": "https://www.jin10.com/", "item": "div.jin10-news-item", "title": "div.jin10-news-text::text", "link": "a::attr(href)"},
         {"name": "21世紀經濟報道", "url": "https://www.21jingji.com/", "item": "div.news_list li", "title": "a::text", "link": "a::attr(href)"},
@@ -85,7 +88,6 @@ def execute_single_scrape(time_range_msg):
     fetcher = Fetcher()
     raw_news = []
 
-    # 爬取與重試邏輯
     for src in selected_sources:
         success = False
         for attempt in range(1, 4):
@@ -95,14 +97,12 @@ def execute_single_scrape(time_range_msg):
                 
                 for it in items[:15]:
                     t = it.css(src["title"]).get()
-                    # 若無法獲取獨立連結（如純快訊網頁），則套用主網站 URL 作為來源指引
                     l = it.css(src["link"]).get() or src["url"]
                     
                     if t:
                         t = t.strip()
                         l = l.strip() if l.startswith("http") else src["url"].rstrip('/') + '/' + l.strip().lstrip('/')
                         
-                        # 去重：若同一個網址已經抓過，則略過 (對於共用首頁連結的快訊，依賴後方 AI 核心事件去重)
                         if l not in history_urls or l == src["url"]: 
                             raw_news.append({"title": t, "link": l, "source": src["name"]})
                             
@@ -114,14 +114,14 @@ def execute_single_scrape(time_range_msg):
                 time.sleep(2)
                 
         if not success:
-            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已跳過 (可能遭遇 WAF 防護)")
+            print(f"  ❌ {src['name']} 重試 3 次皆失敗，已跳過")
 
     print(f"📥 共抓取到 {len(raw_news)} 條未處理的潛在新資訊")
     if not raw_news:
         print("本輪無新資訊需要處理。")
         return
 
-    # --- 呼叫 Gemini 2.5 Flash AI 分析 ---
+    # --- 呼叫全新的 Google GenAI (gemini-2.5-flash) 分析 ---
     api_key = os.getenv("GEMINI_API_KEY")
     keywords = os.getenv("BULLISH_KEYWORDS", "利好, 增長, 大行唱好")
     
@@ -129,9 +129,8 @@ def execute_single_scrape(time_range_msg):
         print("⚠️ 尚未設定 GEMINI_API_KEY，略過 AI 分析。")
         return
 
-    genai.configure(api_key=api_key)
-    # 更新為 Gemini 2.5 Flash
-    model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+    # 初始化全新的 Client
+    client = genai.Client(api_key=api_key)
 
     ai_prompt = f"""
     你是一個專業的港股分析師。請分析以下 JSON 格式的新聞標題與連結。
@@ -159,7 +158,14 @@ def execute_single_scrape(time_range_msg):
     for i in range(0, len(raw_news), 10):
         batch = raw_news[i:i+10]
         try:
-            res = model.generate_content(ai_prompt + "\n資料:\n" + json.dumps(batch, ensure_ascii=False))
+            # 使用全新官方 API 寫法
+            res = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=ai_prompt + "\n資料:\n" + json.dumps(batch, ensure_ascii=False),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                )
+            )
             batch_result = json.loads(res.text)
             ai_results.extend(batch_result)
         except Exception as e:
@@ -170,7 +176,7 @@ def execute_single_scrape(time_range_msg):
     # --- 飛書推送與跨來源事件去重 ---
     webhook = os.getenv("FEISHU_WEBHOOK")
     if not webhook:
-        print("⚠️️ 尚未設定 FEISHU_WEBHOOK，略過發送。")
+        print("⚠ 尚未設定 FEISHU_WEBHOOK，略過發送。")
         return
 
     pushed_count = 0
@@ -178,7 +184,6 @@ def execute_single_scrape(time_range_msg):
         stock = item.get('stock_code', '')
         event = item.get('core_event', '')
         
-        # 第二層去重：檢查歷史紀錄中，是否已經發送過「同公司」的「同事件」
         is_duplicate_event = any(
             (r.get("stock") == stock and r.get("event") == event) 
             for r in history_records
@@ -220,12 +225,9 @@ def execute_single_scrape(time_range_msg):
 
     print(f"🚀 飛書成功發送 {pushed_count} 條不重複的利好消息")
 
-    # 寫入歷史檔案 (保留最近 500 條紀錄)
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(history_records[-500:], f, ensure_ascii=False)
 
-
-# --- 4. 主循環調度器 (隨機休眠機制) ---
 def main():
     session_name, end_time = get_session_window()
     print(f"🌟 啟動時段：【{session_name}】，預計運行至 HKT: {end_time.strftime('%H:%M:%S')}")
@@ -236,18 +238,14 @@ def main():
             print(f"🏁 當前時間 {now.strftime('%H:%M:%S')} 已到達或超過時段結束點，程式平穩退出。")
             break
 
-        # 立即執行一次爬取與分析
         execute_single_scrape(session_name)
 
-        # 檢查爬完後是否已經超時
         now = datetime.now(HKT)
         if now >= end_time:
             break
 
-        # 計算下一次執行的間隔：隨機 22 到 32 分鐘
         sleep_seconds = random.randint(22 * 60, 32 * 60)
         
-        # 若下次執行時間會超過時段結束點，調整等待時間或直接結束
         if now + timedelta(seconds=sleep_seconds) > end_time:
             remaining = (end_time - now).total_seconds()
             if remaining > 600:
