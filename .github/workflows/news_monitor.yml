@@ -35,6 +35,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          PYTHONUNBUFFERED: "1"    # <--- 【新增這行】強制讓 Python 即時吐出所有日誌，絕不卡頓！
         run: python main.py
 
       # 自動保存 history.json 供下次排程使用
