@@ -7,6 +7,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK")
 HISTORY_FILE = "data/history.json"
 
+# --- AI 模型設定 ---
+# 🚨 記得配合修改 analyzer.py 使用這個新變數，解決 404 錯誤
+AI_MODEL = "gemini-3.8-flash"
+
 # --- AI 與推送門檻 ---
 MIN_SCORE = 85           
 MIN_CONFIDENCE = 70      
@@ -18,38 +22,61 @@ HK_KEYWORDS = [
 ]
 BASIC_BULLISH = [
     "升", "漲", "高", "盈", "利", "好", "增", "回購", 
-    "派息", "中標", "突破", "超预", "扭虧", "激勵"
+    "派息", "中標", "突破", "超預期", "扭虧", "激勵"
 ]
 
-# --- 抓取源設定 (【GitHub Actions 美國 IP 專屬白名單】) ---
-# 這些網站對海外 IP 極度友善，不會跳轉或封鎖，確保雲端掛機 100% 成功
+# ==================== 抓取源設定 (專屬解析器對接版) ====================
+
+# Yahoo RSS 監聽的股票池
+YAHOO_STOCKS = [
+    "0700.HK", "1810.HK", "1211.HK", "0388.HK", "0005.HK", "3690.HK", "%5EHSI"
+]
+
+# 這裡的格式完全對齊你 scraper.py 的邏輯 (包含 kind, fetcher, timeout)
 NEWS_SOURCES = [
+    # ---------- RSS 類 ----------
     {
-        "name": "Yahoo 財經", 
-        "url": "https://hk.finance.yahoo.com/", 
-        "item": "h3", 
-        "title": "a::text", 
-        "link": "a::attr(href)"
+        "name": "Yahoo财经",
+        "kind": "yahoo_rss",
+        "stocks": YAHOO_STOCKS,
+        "fetcher": "fetcher",
+        "timeout": 15,
+    },
+    # ---------- JSON API 類 ----------
+    {
+        "name": "东方财富港股",
+        "url": "https://api.eastmoney.com/dataapi/xinwen/list?type=100&pageIndex=1&pageSize=50&keyword=%E6%B8%AF%E8%82%A1",
+        "kind": "json",
+        "fetcher": "fetcher",
+        "timeout": 15,
+    },
+    # ---------- HTML 類 (使用 StealthyFetcher 渲染) ----------
+    {
+        "name": "新浪港股",
+        "url": "https://finance.sina.com.cn/stock/hkstock/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
     },
     {
-        "name": "Reuters 路透社", 
-        "url": "https://www.reuters.com/markets/asia/", 
-        "item": "li.story-collection__story", 
-        "title": "a[data-testid='Heading']::text", 
-        "link": "a[data-testid='Heading']::attr(href)"
+        "name": "智通财经",
+        "url": "https://www.zhitongcaijing.com/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 45,
     },
     {
-        "name": "Investing.com HK", 
-        "url": "https://hk.investing.com/news/stock-market-news", 
-        "item": "article", 
-        "title": "a.title::text", 
-        "link": "a.title::attr(href)"
+        "name": "格隆汇",
+        "url": "https://www.gelonghui.com/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
     },
     {
-        "name": "格隆匯 (7x24快訊)", 
-        "url": "https://www.gelonghui.com/live", 
-        "item": "div.live-item", 
-        "title": "div.content::text", 
-        "link": "a::attr(href)"
-    }
+        "name": "金十数据",
+        "url": "https://www.jin10.com/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
 ]
