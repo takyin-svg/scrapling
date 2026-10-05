@@ -29,14 +29,16 @@ jobs:
           cache: "pip"
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
-        patchright install chromium   # 👈 加入這一行
+        # 👇 就是這裡！必須加上 | 才能寫多行指令
+        run: |
+          pip install -q -r requirements.txt
+          patchright install chromium
 
       - name: Run News Monitor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          PYTHONUNBUFFERED: "1"    # <--- 【新增這行】強制讓 Python 即時吐出所有日誌，絕不卡頓！
+          PYTHONUNBUFFERED: "1"    # 強制讓 Python 即時吐出所有日誌，絕不卡頓！
         run: python main.py
 
       # 自動保存 history.json 供下次排程使用
