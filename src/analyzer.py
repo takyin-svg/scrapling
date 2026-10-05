@@ -39,7 +39,7 @@ class GeminiAnalyzer:
             batch = news_list[i:i+15]
             try:
                 res = self.client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.8-flash',
                     contents=prompt + "\n資料:\n" + json.dumps(batch, ensure_ascii=False),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
