@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-港股量化新聞爬蟲模組 (HK Stock News Polite Scraper) - V2.0 對接版
+港股量化新聞爬蟲模組 (HK Stock News Polite Scraper) - V2.1 終極防線版
 特色：
 - 嚴格遵守禮貌爬取 (3~7 秒隨機延遲)
 - 403/429/50X 錯誤優雅降級
-- 僅爬取列表標題與連結，減輕目標伺服器負載
+- 新增「泛用型 <a> 標籤」終極備用防線，無懼網站改版
 - 完美對接 Gemini Analyzer
 """
 
@@ -25,105 +25,55 @@ logging.basicConfig(
 )
 logger = logging.getLogger("HKStockScraper")
 
-# 9 大精選源頭配置 (已移除 AASTOCKS)
+# 8 大精選源頭配置 (移除強力封鎖的 Bloomberg)
 SOURCE_CONFIGS = [
     {
         "id": "sina_hk",
         "name": "新浪港股",
         "url": "https://finance.sina.com.cn/stock/hkstock/",
-        "selectors": [
-            "ul.list_009 li a",
-            ".news-list li a",
-            ".list-01 li a",
-            "div.feed-card-item h2 a",
-        ],
+        "selectors": ["ul.list_009 li a", ".news-list li a", "div.feed-card-item h2 a"],
     },
     {
         "id": "gelonghui",
         "name": "格隆匯",
         "url": "https://www.gelonghui.com/",
-        "selectors": [
-            "section.article-item h2 a",
-            ".article-content a",
-            ".news-item a",
-            ".item-title a",
-        ],
+        "selectors": ["section.article-item h2 a", ".article-content a", ".news-item a"],
     },
     {
         "id": "hkej",
         "name": "信報財經",
         "url": "https://www.hkej.com/instantnews/hongkong",
-        "selectors": [
-            "div.allNewsList h3 a",
-            ".listing h3 a",
-            "div.headline a",
-            "h3.subhead a",
-        ],
+        "selectors": ["div.allNewsList h3 a", ".listing h3 a", "h3.subhead a"],
     },
     {
         "id": "cnbc_asia",
         "name": "CNBC Asia",
         "url": "https://www.cnbc.com/markets/asia-markets/",
-        "selectors": [
-            "a.Card-title",
-            ".Card-titleContainer a",
-            "a.RiverHeadline-headline",
-            ".RiverHeadline-headline a",
-        ],
+        "selectors": ["a.Card-title", ".RiverHeadline-headline a"],
     },
     {
         "id": "marketwatch_asia",
         "name": "MarketWatch Asia",
         "url": "https://www.marketwatch.com/markets/asia",
-        "selectors": [
-            "h3.article__headline a",
-            "div.article__content a.link",
-            ".element--article a.link",
-        ],
+        "selectors": ["h3.article__headline a", "div.article__content a.link"],
     },
     {
         "id": "nikkei_asia",
         "name": "Nikkei Asia",
         "url": "https://asia.nikkei.com/business/markets",
-        "selectors": [
-            "article.article h2 a",
-            "h2.headline a",
-            ".article-title a",
-            "a.title",
-        ],
-    },
-    {
-        "id": "bloomberg_asia",
-        "name": "Bloomberg Asia",
-        "url": "https://www.bloomberg.com/asia",
-        "selectors": [
-            "div[data-component='headline'] a",
-            "article h3 a",
-            "a[data-type='story']",
-            "h3 a",
-        ],
+        "selectors": ["article.article h2 a", "h2.headline a", ".article-title a"],
     },
     {
         "id": "zhitong",
         "name": "智通財經",
         "url": "https://www.zhitongcaijing.com/",
-        "selectors": [
-            "div.res-list a",
-            ".news-item a",
-            "div.content-box a",
-            ".item-title a",
-        ],
+        "selectors": ["div.res-list a", ".news-item a", "div.content-box a"],
     },
     {
         "id": "hstong",
         "name": "華盛通資訊",
         "url": "https://www.hstong.com/news",
-        "selectors": [
-            "div.news-item a",
-            "div.article-item a",
-            ".news-list a",
-            "h3 a",
-        ],
+        "selectors": ["div.news-item a", "div.article-item a", "h3 a"],
     },
 ]
 
@@ -141,7 +91,6 @@ class HKStockScraper:
                 return text.strip()
         except Exception:
             pass
-
         if hasattr(element, "text") and isinstance(element.text, str):
             return element.text.strip()
         return ""
@@ -155,7 +104,6 @@ class HKStockScraper:
                 return href.strip()
         except Exception:
             pass
-
         if hasattr(element, "attrib") and isinstance(element.attrib, dict):
             return element.attrib.get("href", "").strip()
         return ""
@@ -164,7 +112,10 @@ class HKStockScraper:
         items = []
         seen_links = set()
 
-        for sel in selectors:
+        # 🚨 核心改動：將泛用的 "a" 標籤作為終極備用防線，無懼網站改版
+        active_selectors = selectors + ["a"]
+
+        for sel in active_selectors:
             try:
                 elements = page_adaptor.css(sel)
                 if not elements:
@@ -174,7 +125,13 @@ class HKStockScraper:
                     title = self._safe_get_text(el)
                     raw_href = self._safe_get_href(el)
 
-                    if not title or len(title) < 5 or not raw_href or raw_href.startswith("javascript:"):
+                    # 標題太短 (少於 8 個字) 或無效連結直接濾除
+                    if not title or len(title) < 8 or not raw_href or raw_href.startswith("javascript:"):
+                        continue
+                    
+                    # 排除網站導覽列與雜訊按鈕
+                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼"]
+                    if any(w in title.lower() for w in skip_words):
                         continue
 
                     full_url = urljoin(base_url, raw_href)
@@ -188,6 +145,7 @@ class HKStockScraper:
                         "link": full_url,
                     })
 
+                # 如果成功抓到 3 條以上，代表這個選擇器是精準有效的，立刻跳出迴圈
                 if len(items) >= 3:
                     break
             except Exception as e:
@@ -228,7 +186,6 @@ class HKStockScraper:
             return []
 
     def fetch_all(self) -> List[Dict[str, str]]:
-        """執行全流程爬取，並落實 3~7 秒隨機延遲 (對接 V2.0 Orchestrator)"""
         all_news: List[Dict[str, str]] = []
         total = len(SOURCE_CONFIGS)
 
