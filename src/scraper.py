@@ -1,246 +1,247 @@
+#!/usr/bin/env python3
+"""
+港股量化新聞爬蟲模組 (HK Stock News Polite Scraper) - V2.0 對接版
+特色：
+- 嚴格遵守禮貌爬取 (3~7 秒隨機延遲)
+- 403/429/50X 錯誤優雅降級
+- 僅爬取列表標題與連結，減輕目標伺服器負載
+- 完美對接 Gemini Analyzer
+"""
+
 import json
-import re
+import logging
+import random
 import time
+from typing import Any, Dict, List
 from urllib.parse import urljoin
 
-from scrapling.fetchers import Fetcher, StealthyFetcher
+from scrapling.fetchers import StealthyFetcher
 
-# ==================== 源配置 ====================
-SOURCES = [
+# 設置日誌格式
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("HKStockScraper")
+
+# 9 大精選源頭配置 (已移除 AASTOCKS)
+SOURCE_CONFIGS = [
     {
-        "name": "Yahoo財經(大盤)",
-        "url": "https://hk.finance.yahoo.com/",
-        "fetcher": "stealth",
-        "timeout_sec": 30,
-    },
-    {
-        "name": "东方财富",
-        "url": (
-            "https://api.eastmoney.com/dataapi/xinwen/list?"
-            "type=100&pageIndex=1&pageSize=50&keyword=%E6%B8%AF%E8%82%A1"
-        ),
-        "fetcher": "fetcher",  # 東財維持純 HTTP，若被擋則自動優雅跳過
-        "timeout_sec": 15,
-    },
-    {
+        "id": "sina_hk",
         "name": "新浪港股",
         "url": "https://finance.sina.com.cn/stock/hkstock/",
-        "fetcher": "stealth",
-        "timeout_sec": 45,
+        "selectors": [
+            "ul.list_009 li a",
+            ".news-list li a",
+            ".list-01 li a",
+            "div.feed-card-item h2 a",
+        ],
     },
     {
-        "name": "智通財經",
-        "url": "https://www.zhitongcaijing.com/",
-        "fetcher": "stealth",
-        "timeout_sec": 60,
-    },
-    {
+        "id": "gelonghui",
         "name": "格隆匯",
         "url": "https://www.gelonghui.com/",
-        "fetcher": "stealth",
-        "timeout_sec": 45,
+        "selectors": [
+            "section.article-item h2 a",
+            ".article-content a",
+            ".news-item a",
+            ".item-title a",
+        ],
     },
     {
-        "name": "金十數據",
-        "url": "https://www.jin10.com/",
-        "fetcher": "stealth",
-        "timeout_sec": 45,
-    }
+        "id": "hkej",
+        "name": "信報財經",
+        "url": "https://www.hkej.com/instantnews/hongkong",
+        "selectors": [
+            "div.allNewsList h3 a",
+            ".listing h3 a",
+            "div.headline a",
+            "h3.subhead a",
+        ],
+    },
+    {
+        "id": "cnbc_asia",
+        "name": "CNBC Asia",
+        "url": "https://www.cnbc.com/markets/asia-markets/",
+        "selectors": [
+            "a.Card-title",
+            ".Card-titleContainer a",
+            "a.RiverHeadline-headline",
+            ".RiverHeadline-headline a",
+        ],
+    },
+    {
+        "id": "marketwatch_asia",
+        "name": "MarketWatch Asia",
+        "url": "https://www.marketwatch.com/markets/asia",
+        "selectors": [
+            "h3.article__headline a",
+            "div.article__content a.link",
+            ".element--article a.link",
+        ],
+    },
+    {
+        "id": "nikkei_asia",
+        "name": "Nikkei Asia",
+        "url": "https://asia.nikkei.com/business/markets",
+        "selectors": [
+            "article.article h2 a",
+            "h2.headline a",
+            ".article-title a",
+            "a.title",
+        ],
+    },
+    {
+        "id": "bloomberg_asia",
+        "name": "Bloomberg Asia",
+        "url": "https://www.bloomberg.com/asia",
+        "selectors": [
+            "div[data-component='headline'] a",
+            "article h3 a",
+            "a[data-type='story']",
+            "h3 a",
+        ],
+    },
+    {
+        "id": "zhitong",
+        "name": "智通財經",
+        "url": "https://www.zhitongcaijing.com/",
+        "selectors": [
+            "div.res-list a",
+            ".news-item a",
+            "div.content-box a",
+            ".item-title a",
+        ],
+    },
+    {
+        "id": "hstong",
+        "name": "華盛通資訊",
+        "url": "https://www.hstong.com/news",
+        "selectors": [
+            "div.news-item a",
+            "div.article-item a",
+            ".news-list a",
+            "h3 a",
+        ],
+    },
 ]
 
-# ==================== 防禦式工具 ====================
-def get_status(page):
-    return getattr(page, "status", None)
 
-def get_body(page):
-    b = getattr(page, "body", b"")
-    if isinstance(b, bytes):
-        return b.decode("utf-8", "ignore")
-    return b or ""
-
-def get_page_url(page):
-    return getattr(page, "url", "") or ""
-
-def all_css(el, sel):
-    try:
-        return list(el.css(sel))
-    except Exception:
-        return []
-
-def text_of(el):
-    if el is None:
-        return ""
-    try:
-        return (el.text or "").strip()
-    except Exception:
-        return ""
-
-def href_of(el):
-    if el is None:
-        return ""
-    try:
-        return (el.attrib.get("href", "") or "").strip()
-    except Exception:
-        return ""
-
-# ==================== 解析器 ====================
-def parse_eastmoney(page):
-    items = []
-    body = get_body(page).strip()
-    if not body:
-        return items
-    
-    # 防禦 WAF 阻擋：如果回傳的是 HTML(CSS) 而不是 JSON，直接放棄
-    if not (body.startswith("{") or body.startswith("[")):
-        m = re.search(r"\{.*\}", body, re.DOTALL)
-        body = m.group(0) if m else body
-    
-    try:
-        data = json.loads(body)
-    except Exception:
-        return items
-
-    records = (
-        (data.get("data") or {}).get("diff")
-        or data.get("result")
-        or data.get("data")
-        or []
-    )
-    if isinstance(records, dict):
-        records = records.get("data") or []
-
-    for r in records:
-        t = r.get("title") or r.get("news_title") or ""
-        u = r.get("url") or r.get("news_url") or r.get("link") or ""
-        if t and u:
-            items.append({
-                "title": t,
-                "link": u,
-                "source": "东方财富"
-            })
-    return items
-
-def parse_by_href(page, name, *href_substrings, clean_prefix=False):
-    items, seen = [], set()
-    page_url = get_page_url(page)
-    
-    for a in all_css(page, "a"):
-        href = href_of(a)
-        # 若有指定特徵字串，則必須包含
-        if href_substrings and not any(s in href for s in href_substrings):
-            continue
-            
-        t = text_of(a)
-        if not t or len(t) < 8:
-            continue
-        if href in seen:
-            continue
-        seen.add(href)
-        
-        if clean_prefix:
-            t = re.sub(r"^\s*格隆汇\d+月\d+日[|｜:：]\s*", "", t)
-            
-        full = urljoin(page_url, href) if not href.startswith("http") else href
-        items.append({
-            "title": t,
-            "link": full,
-            "source": name
-        })
-    return items
-
-def parse_yahoo(page):
-    """專門解析 Yahoo 大盤首頁新聞"""
-    items, seen = [], set()
-    page_url = get_page_url(page)
-    
-    # Yahoo 財經首頁核心新聞通常在 h3 標籤內
-    for a in all_css(page, "h3 a"):
-        href = href_of(a)
-        t = text_of(a)
-        if not t or not href or len(t) < 8:
-            continue
-        if "/video/" in href or "login" in href:
-            continue
-        if href in seen:
-            continue
-        seen.add(href)
-        
-        full = urljoin(page_url, href) if not href.startswith("http") else href
-        items.append({
-            "title": t,
-            "link": full,
-            "source": "Yahoo財經(大盤)"
-        })
-    return items
-
-def parse_sina(page):
-    items = parse_by_href(page, "新浪港股", "sina.com.cn", "/hkstock", "/doc-")
-    if not items:
-        items = parse_by_href(page, "新浪港股", "finance.sina.com.cn")
-    return items
-
-
-# ==================== 抓取核心 ====================
-def fetch_page(cfg):
-    url = cfg["url"]
-    timeout_sec = cfg.get("timeout_sec", 30)
-    fetcher_type = cfg.get("fetcher", "stealth")
-    name = cfg.get("name", "unknown")
-
-    for attempt in (1, 2):
-        try:
-            if fetcher_type == "fetcher":
-                page = Fetcher.get(url, timeout=timeout_sec)
-            else:
-                page = StealthyFetcher.fetch(
-                    url,
-                    headless=True,
-                    network_idle=True,
-                    timeout=timeout_sec * 1000,
-                )
-            if page and get_status(page) == 200:
-                return page
-            print(f"    ⚠️️ [{name}] 非200: status={get_status(page)}")
-        except Exception as e:
-            print(f"    ⚠️ [{name}] 第{attempt}次失敗: {type(e).__name__} ({str(e)[:50]})")
-            if attempt < 2:
-                time.sleep(2)
-    return None
-
-def run_scraper() -> list[dict]:
-    total = []
-
-    for src in SOURCES:
-        name = src["name"]
-        page = fetch_page(src)
-        if not page:
-            continue
-
-        if name == "东方财富":
-            items = parse_eastmoney(page)
-        elif name == "Yahoo財經(大盤)":
-            items = parse_yahoo(page)
-        elif name == "新浪港股":
-            items = parse_sina(page)
-        elif name == "智通財經":
-            items = parse_by_href(page, "智通財經", "/content/detail/")
-        elif name == "格隆匯":
-            items = parse_by_href(page, "格隆匯", "/live/", "/p/", clean_prefix=True)
-        elif name == "金十數據":
-            items = parse_by_href(page, "金十數據", "/flash/", "/detail/", "jin10.com/flash")
-        else:
-            items = []
-
-        print(f"  ✅ [{name}] 成功抓取 {len(items)} 條")
-        total.extend(items)
-
-    print(f"📥 總計：全網共抓取到 {len(total)} 條原始資訊")
-    return total
-
-# ==================== V2.0 系統整合介面 ====================
 class HKStockScraper:
-    def fetch_all(self) -> list[dict]:
-        """
-        對接 V2.0 Orchestrator 的標準接口。
-        """
-        return run_scraper()
+    def __init__(self, timeout_ms: int = 45000):
+        self.timeout_ms = timeout_ms
+
+    def _safe_get_text(self, element: Any) -> str:
+        if element is None:
+            return ""
+        try:
+            text = element.css("::text").get()
+            if text and text.strip():
+                return text.strip()
+        except Exception:
+            pass
+
+        if hasattr(element, "text") and isinstance(element.text, str):
+            return element.text.strip()
+        return ""
+
+    def _safe_get_href(self, element: Any) -> str:
+        if element is None:
+            return ""
+        try:
+            href = element.css("::attr(href)").get()
+            if href and href.strip():
+                return href.strip()
+        except Exception:
+            pass
+
+        if hasattr(element, "attrib") and isinstance(element.attrib, dict):
+            return element.attrib.get("href", "").strip()
+        return ""
+
+    def _parse_elements(self, page_adaptor: Any, base_url: str, selectors: List[str], source_name: str) -> List[Dict[str, str]]:
+        items = []
+        seen_links = set()
+
+        for sel in selectors:
+            try:
+                elements = page_adaptor.css(sel)
+                if not elements:
+                    continue
+
+                for el in elements:
+                    title = self._safe_get_text(el)
+                    raw_href = self._safe_get_href(el)
+
+                    if not title or len(title) < 5 or not raw_href or raw_href.startswith("javascript:"):
+                        continue
+
+                    full_url = urljoin(base_url, raw_href)
+                    if full_url in seen_links:
+                        continue
+
+                    seen_links.add(full_url)
+                    items.append({
+                        "source": source_name,
+                        "title": title,
+                        "link": full_url,
+                    })
+
+                if len(items) >= 3:
+                    break
+            except Exception as e:
+                logger.debug(f"選擇器 '{sel}' 解析失敗: {e}")
+                continue
+
+        return items
+
+    def fetch_source(self, config: Dict[str, Any]) -> List[Dict[str, str]]:
+        name = config["name"]
+        url = config["url"]
+        logger.info(f"開始抓取: {name} ({url})")
+
+        try:
+            response = StealthyFetcher.fetch(url, timeout=self.timeout_ms, headless=True)
+            status = getattr(response, "status", 200)
+
+            if status in (401, 403, 429):
+                logger.warning(f"⚠️ [{name}] 遭遇存取限制 (HTTP {status})，已優雅跳過該源頭。")
+                return []
+            if status >= 500:
+                logger.warning(f"⚠️ [{name}] 目標伺服器內部異常 (HTTP {status})，已優雅跳過該源頭。")
+                return []
+
+            news_list = self._parse_elements(
+                page_adaptor=response,
+                base_url=url,
+                selectors=config["selectors"],
+                source_name=name,
+            )
+
+            logger.info(f"✅ [{name}] 成功取得 {len(news_list)} 則新聞標題。")
+            return news_list
+
+        except Exception as e:
+            err_msg = str(e).split("\n")[0]
+            logger.error(f"❌ [{name}] 抓取異常，已跳過: {err_msg[:80]}")
+            return []
+
+    def fetch_all(self) -> List[Dict[str, str]]:
+        """執行全流程爬取，並落實 3~7 秒隨機延遲 (對接 V2.0 Orchestrator)"""
+        all_news: List[Dict[str, str]] = []
+        total = len(SOURCE_CONFIGS)
+
+        logger.info(f"啟動港股量化新聞抓取任務，共計 {total} 個精選源頭。")
+
+        for idx, config in enumerate(SOURCE_CONFIGS, 1):
+            source_news = self.fetch_source(config)
+            all_news.extend(source_news)
+
+            if idx < total:
+                delay = round(random.uniform(3.0, 7.0), 2)
+                logger.info(f"[友善延遲] 休眠 {delay} 秒以保護目標伺服器...")
+                time.sleep(delay)
+
+        logger.info(f"任務完成！總計自 {total} 個源頭抓取到 {len(all_news)} 則新聞。")
+        return all_news
