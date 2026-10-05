@@ -1,31 +1,19 @@
 import re
 import time
-import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
 
 from scrapling.fetchers import StealthyFetcher, Fetcher
 
 # ==================== 源配置 ====================
 
-# Yahoo RSS 監聽的股票池（可按需增刪）
-YAHOO_STOCKS = [
-    "0700.HK",   # 騰訊
-    "1810.HK",   # 小米
-    "1211.HK",   # 比亞迪股份
-    "0388.HK",   # 港交所
-    "0005.HK",   # 匯豐控股
-    "3690.HK",   # 美團
-    "%5EHSI",    # 恆生指數
-]
-
 SOURCES = [
-    # ---------- RSS 類（純 HTTP，最快最穩） ----------
+    # ---------- 大盤首頁類 (HTML 動態渲染) ----------
     {
-        "name": "Yahoo財經",
-        "kind": "yahoo_rss",
-        "stocks": YAHOO_STOCKS,
-        "fetcher": "fetcher",
-        "timeout": 15,
+        "name": "Yahoo財經(大盤)",
+        "url": "https://hk.finance.yahoo.com/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
     },
     # ---------- JSON API 類 ----------
     {
@@ -87,34 +75,6 @@ def _is_duplicate(url: str) -> bool:
 
 
 # ==================== 解析器 ====================
-
-def parse_yahoo_rss(page, stock_code: str) -> list[dict]:
-    items = []
-    try:
-        root = ET.fromstring(page.body)
-    except Exception:
-        return items
-
-    for el in root.findall(".//item"):
-        title_el = el.find("title")
-        link_el = el.find("link")
-        pub_el = el.find("pubDate")
-        desc_el = el.find("description")
-
-        title = (title_el.text or "").strip() if title_el is not None else ""
-        link = link_el.text.strip() if link_el is not None and link_el.text else ""
-        pub = (pub_el.text or "").strip() if pub_el is not None else ""
-        desc = (desc_el.text or "").strip() if desc_el is not None and desc_el.text else ""
-
-        if title:
-            items.append({
-                "title": title,
-                "url": link,
-                "pub_date": pub,
-                "source": f"Yahoo-{stock_code}",
-                "snippet": desc,
-            })
-    return items
 
 def parse_eastmoney_json(page) -> list[dict]:
     import json
@@ -189,6 +149,38 @@ def _generic_list_parse(
         })
     return items
 
+def parse_yahoo_hk(page) -> list[dict]:
+    """專門解析 Yahoo 香港財經首頁的抓取器"""
+    items = []
+    seen_local = set()
+    # Yahoo 財經首頁的主要新聞標題都放在 h3 裡面的 a 標籤
+    for a in page.css("h3 a"):
+        title = (a.text or "").strip()
+        href = a.attrib.get("href", "")
+        if not title or not href or len(title) < 8:
+            continue
+        if href in seen_local:
+            continue
+        seen_local.add(href)
+        
+        # 排除首頁的導覽列與影音連結
+        if "/video/" in href or "login" in href:
+            continue
+
+        full_url = urljoin(page.url, href) if not href.startswith("http") else href
+        items.append({
+            "title": title,
+            "url": full_url,
+            "pub_date": "",
+            "source": "Yahoo財經(大盤)",
+            "snippet": "",
+        })
+    
+    # 防呆機制：若 h3 抓不到，嘗試用更廣泛的列表抓取
+    if not items:
+        items = _generic_list_parse(page, "Yahoo財經(大盤)", card_selector="li.js-stream-content", link_selector="a")
+    return items
+
 def parse_sina_hk(page) -> list[dict]:
     items = page.css("ul.list li, .newslist li, .blk01 li")
     result = []
@@ -224,6 +216,7 @@ def parse_jin10(page) -> list[dict]:
 # ==================== 抓取核心 ====================
 
 PARSERS = {
+    "Yahoo財經(大盤)": parse_yahoo_hk,  # 對接新的 Yahoo 解析器
     "新浪港股": parse_sina_hk,
     "东方财富港股": parse_eastmoney_json,
     "智通财经": parse_zhitong,
@@ -233,21 +226,23 @@ PARSERS = {
 
 def fetch_page(source_cfg: dict, url: str):
     fetcher_type = source_cfg.get("fetcher", "stealth")
-    timeout = source_cfg.get("timeout", 30)
+    timeout_sec = source_cfg.get("timeout", 30)  # 取得設定的秒數
     max_retries = 2
     name = source_cfg.get("name", "unknown")
 
     for attempt in range(1, max_retries + 1):
         try:
             if fetcher_type == "fetcher":
-                page = Fetcher.get(url, timeout=timeout)
+                # 一般 HTTP 請求，timeout 單位是秒
+                page = Fetcher.get(url, timeout=timeout_sec)
             else:
-                page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=timeout)
+                # 🚨 Playwright 渲染引擎，timeout 單位必須轉換為毫秒 (* 1000)
+                page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=timeout_sec * 1000)
                 
-            if page and page.status == 200:
+            if page and getattr(page, 'status', 200) == 200:
                 return page
         except Exception as e:
-            print(f"    ⚠️ 第 {attempt} 次失敗: {type(e).__name__}: {e}")
+            print(f"    ⚠️ 第 {attempt} 次失敗: {type(e).__name__}: {str(e)[:150]}")
             if attempt < max_retries:
                 time.sleep(2)
 
@@ -256,21 +251,9 @@ def fetch_page(source_cfg: dict, url: str):
 
 def fetch_source(source_cfg: dict) -> list[dict]:
     name = source_cfg["name"]
+    url = source_cfg["url"]
     kind = source_cfg.get("kind", "html")
 
-    if kind == "yahoo_rss":
-        all_items = []
-        for stock in source_cfg.get("stocks", []):
-            url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock}&region=HK&lang=zh-Hant-HK"
-            page = fetch_page(source_cfg, url)
-            if page:
-                items = parse_yahoo_rss(page, stock)
-                print(f"  ✅ [Yahoo-{stock}] 成功抓取 {len(items)} 條")
-                all_items.extend(items)
-            time.sleep(0.3)
-        return all_items
-
-    url = source_cfg["url"]
     page = fetch_page(source_cfg, url)
     if not page:
         return []
@@ -280,6 +263,7 @@ def fetch_source(source_cfg: dict) -> list[dict]:
     else:
         parser = PARSERS.get(name)
         if not parser:
+            print(f"  ⚠️ 找不到 [{name}] 的解析器")
             return []
         items = parser(page)
 
@@ -309,7 +293,7 @@ class HKStockScraper:
     def fetch_all(self) -> list[dict]:
         """
         對接 V2.0 Orchestrator 的標準接口。
-        將你強大的多源爬蟲資料格式化為系統預期的結構。
+        將多源爬蟲資料格式化為系統預期的結構。
         """
         raw_news = run_scraper()
         
