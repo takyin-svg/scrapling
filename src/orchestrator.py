@@ -57,6 +57,11 @@ class Orchestrator:
                 filtered_news = news_filter.apply(raw_news)
                 # Step 3 & 4: 分析與推送
                 if filtered_news:
+                    # 🚨 【核心修復點】：在送交 AI 之前，強制將網址寫入已掃描記憶！
+                    # 這樣不管 AI 稍後是核准還是淘汰，下一輪都絕對不會再重複送件。
+                    for news in filtered_news:
+                        state_mgr.add_record(news.get("link"), event="已交由AI分析")
+                        
                     analyzed_news = analyzer.analyze(filtered_news)
                     notifier.push(analyzed_news)
                 else:
