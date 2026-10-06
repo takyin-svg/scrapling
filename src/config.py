@@ -12,7 +12,7 @@ HISTORY_FILE = "data/history.json"
 AI_MODEL = "gemini-3.8-flash"
 
 # --- AI 與推送門檻 ---
-MIN_SCORE = 85          
+MIN_SCORE = 70          
 MIN_CONFIDENCE = 70      
 
 # --- 本地初篩過濾器 ---
