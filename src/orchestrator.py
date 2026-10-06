@@ -55,17 +55,27 @@ class Orchestrator:
             # Step 2: 過濾
             if raw_news:
                 filtered_news = news_filter.apply(raw_news)
-                # Step 3 & 4: 分析與推送
+                
+                # 🚨 【核心修復點】：建立記憶體攔截網
+                # 過濾掉已經處理過的網址，並將真正的新網址寫入記憶！
+                final_news = []
                 if filtered_news:
-                    # 🚨 【核心修復點】：在送交 AI 之前，強制將網址寫入已掃描記憶！
-                    # 這樣不管 AI 稍後是核准還是淘汰，下一輪都絕對不會再重複送件。
                     for news in filtered_news:
-                        state_mgr.add_record(news.get("link"), event="已交由AI分析")
-                        
-                    analyzed_news = analyzer.analyze(filtered_news)
+                        url = news.get("link")
+                        # 檢查這個網址是否已經在 history.json 裡了？
+                        if state_mgr.is_url_scanned(url):
+                            continue  # 看過就直接跳過，絕不重複送件
+                            
+                        # 沒看過的話，立刻登記到記憶體，然後放行
+                        state_mgr.add_record(url, event="已交由AI分析")
+                        final_news.append(news)
+                
+                # Step 3 & 4: 分析與推送
+                if final_news:
+                    analyzed_news = analyzer.analyze(final_news)
                     notifier.push(analyzed_news)
                 else:
-                    print("🤷‍♂️ 本次抓取沒有符合 [港股+利好] 條件的新鮮資訊，跳過 AI 分析。")
+                    print("🤷‍♂️ 本次抓取沒有符合 [港股+利好] 條件的【全新】資訊，跳過 AI 分析。")
             
             # 保存歷史紀錄
             state_mgr.save()
