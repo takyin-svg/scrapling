@@ -2,22 +2,19 @@ from src.config import HK_KEYWORDS, BASIC_BULLISH
 
 class NewsFilter:
     def __init__(self, state_manager):
+        # 保留這個接收參數，以免 orchestrator.py 初始化時報錯
+        # 但我們在此類別中不再讓它去讀寫記憶體
         self.state_manager = state_manager
 
     def apply(self, raw_news: list[dict]) -> list[dict]:
         filtered = []
         for news in raw_news:
-            title = news["title"]
-            url = news["link"]
+            title = news.get("title", "")
             
-            # 第一重：URL 去重
-            if self.state_manager.is_url_scanned(url):
-                continue
+            # 🚨 內鬼已拔除：刪除了 URL 去重與 add_record 的邏輯
+            # 這些動作已經在 orchestrator.py 裡面完美處理了
             
-            # 必須把準備分析的標記為已看過，防止後續重複抓取浪費 AI Token
-            self.state_manager.add_record(url=url)
-            
-            # 第二重：關鍵字初篩 (剔除無關/垃圾新聞)
+            # 關鍵字初篩 (剔除無關/垃圾新聞)
             is_hk_related = any(kw in title for kw in HK_KEYWORDS)
             has_bullish_hint = any(kw in title for kw in BASIC_BULLISH)
             
