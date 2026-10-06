@@ -56,15 +56,18 @@ class Orchestrator:
             if raw_news:
                 filtered_news = news_filter.apply(raw_news)
                 
-                # 🚨 【核心修復點】：建立記憶體攔截網
-                # 過濾掉已經處理過的網址，並將真正的新網址寫入記憶！
+                # 🚨 記憶體攔截網 (已加入攔截日誌輸出)
                 final_news = []
                 if filtered_news:
                     for news in filtered_news:
                         url = news.get("link")
+                        title = news.get("title", "無標題")
+                        
                         # 檢查這個網址是否已經在 history.json 裡了？
                         if state_mgr.is_url_scanned(url):
-                            continue  # 看過就直接跳過，絕不重複送件
+                            # 👉 新增這行：把被攔截的重複新聞印出來，方便你驗證
+                            print(f"  ⏭️ [重複攔截] 標題: {title[:40]}... | 網址: {url}")
+                            continue  
                             
                         # 沒看過的話，立刻登記到記憶體，然後放行
                         state_mgr.add_record(url, event="已交由AI分析")
