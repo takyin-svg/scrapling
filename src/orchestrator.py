@@ -28,7 +28,7 @@ class Orchestrator:
         session_name, end_time = self._get_window()
         print(f"🌟 啟動時段：【{session_name}】，預計運行至 HKT: {end_time.strftime('%H:%M:%S')}")
 
-        initial_sleep = random.randint(0, 15 * 60)
+        initial_sleep = random.randint(0, 5 * 60)
         first_run_time = datetime.now(HKT) + timedelta(seconds=initial_sleep)
         print(f"🎲 [首次排程] 第一波隨機爬取時間定於 HKT: {first_run_time.strftime('%H:%M:%S')}")
         print(f"💤 [狀態] 系統正在 Sleep 待機中... (預計等待 {initial_sleep} 秒 / 約 {initial_sleep // 60} 分鐘)")
