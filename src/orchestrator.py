@@ -65,7 +65,6 @@ class Orchestrator:
                         
                         # 檢查這個網址是否已經在 history.json 裡了？
                         if state_mgr.is_url_scanned(url):
-                            # 👉 新增這行：把被攔截的重複新聞印出來，方便你驗證
                             print(f"  ⏭️ [重複攔截] 標題: {title[:40]}... | 網址: {url}")
                             continue  
                             
@@ -75,8 +74,30 @@ class Orchestrator:
                 
                 # Step 3 & 4: 分析與推送
                 if final_news:
-                    analyzed_news = analyzer.analyze(final_news)
-                    notifier.push(analyzed_news)
+                    analyzed_news = []
+                    
+                    # 🚨 修改 3：分批交給 AI 分析 (每批 20 條)
+                    batch_size = 20
+                    for i in range(0, len(final_news), batch_size):
+                        batch = final_news[i:i+batch_size]
+                        print(f"🧠 開始將第 {i+1} 至 {min(i+batch_size, len(final_news))} 條新聞送入 AI 分析...")
+                        batch_results = analyzer.analyze(batch)
+                        if batch_results:
+                            analyzed_news.extend(batch_results)
+                    
+                    # 🚨 修改 1 & 2：加入推送日期與時間，並一次性打包推送
+                    if analyzed_news:
+                        push_time = datetime.now(HKT).strftime('%Y-%m-%d %H:%M:%S')
+                        print(f"🚀 AI 共篩選出 {len(analyzed_news)} 條達標訊號，準備合併推送...")
+                        
+                        push_payload = {
+                            "push_time": push_time,
+                            "news_list": analyzed_news
+                        }
+                        # 將封裝好的時間和資料清單交給飛書
+                        notifier.push(push_payload)
+                    else:
+                        print("✨ AI 深度分析完成，篩選出 0 條達標重磅訊號！")
                 else:
                     print("🤷‍♂️ 本次抓取沒有符合 [港股+利好] 條件的【全新】資訊，跳過 AI 分析。")
             
