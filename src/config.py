@@ -9,7 +9,7 @@ HISTORY_FILE = "data/history.json"
 
 # --- AI 模型設定 ---
 # 🚨 記得配合修改 analyzer.py 使用這個新變數，解決 404 錯誤
-AI_MODEL = "gemini-3.8-flash"
+AI_MODEL = "gemini-3.5-flash-lite"
 
 # --- AI 與推送門檻 ---
 MIN_SCORE = 80          
