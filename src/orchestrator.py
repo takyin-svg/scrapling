@@ -19,9 +19,10 @@ class Orchestrator:
         elif 5 <= hour < 10:
             end = now.replace(hour=10, minute=0, second=0, microsecond=0)
             return "早盤前 (橫跨週末/昨夜至今日開盤)", end
-        elif (hour == 10 and minute >= 20) or (11 <= hour < 14):
-            end = now.replace(hour=14, minute=0, second=0, microsecond=0)
-            return "盤中 (10:30-14:00)", end
+        # 🚨 盤中時段精準設定為 10:30 - 15:30
+        elif (hour == 10 and minute >= 30) or (11 <= hour <= 14) or (hour == 15 and minute < 30):
+            end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            return "盤中 (10:30-15:30)", end
         return "自訂/測試時段", now + timedelta(minutes=60)
 
     def run(self):
@@ -76,7 +77,7 @@ class Orchestrator:
                 if final_news:
                     analyzed_news = []
                     
-                    # 🚨 修改 3：分批交給 AI 分析 (每批 20 條)
+                    # 分批交給 AI 分析 (每批 20 條)
                     batch_size = 20
                     for i in range(0, len(final_news), batch_size):
                         batch = final_news[i:i+batch_size]
@@ -85,7 +86,7 @@ class Orchestrator:
                         if batch_results:
                             analyzed_news.extend(batch_results)
                     
-                    # 🚨 修改 1 & 2：加入推送日期與時間，並一次性打包推送
+                    # 加入推送日期與時間，並一次性打包推送
                     if analyzed_news:
                         push_time = datetime.now(HKT).strftime('%Y-%m-%d %H:%M:%S')
                         print(f"🚀 AI 共篩選出 {len(analyzed_news)} 條達標訊號，準備合併推送...")
