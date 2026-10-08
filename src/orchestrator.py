@@ -19,7 +19,6 @@ class Orchestrator:
         elif 5 <= hour < 10:
             end = now.replace(hour=10, minute=0, second=0, microsecond=0)
             return "早盤前 (橫跨週末/昨夜至今日開盤)", end
-        # 🚨 盤中時段精準設定為 10:30 - 15:30
         elif (hour == 10 and minute >= 30) or (11 <= hour <= 14) or (hour == 15 and minute < 30):
             end = now.replace(hour=15, minute=30, second=0, microsecond=0)
             return "盤中 (10:30-15:30)", end
@@ -50,62 +49,57 @@ class Orchestrator:
             print(f"⏰ [{now.strftime('%H:%M:%S')} HKT] 開始執行隨機抽樣爬取！")
             print(f"==================================================")
             
-            # Step 1: 抓取
             raw_news = scraper.fetch_all()
             
-            # Step 2: 過濾
             if raw_news:
                 filtered_news = news_filter.apply(raw_news)
                 
-                # 🚨 記憶體攔截網 (已加入攔截日誌輸出)
                 final_news = []
                 if filtered_news:
                     for news in filtered_news:
                         url = news.get("link")
                         title = news.get("title", "無標題")
                         
-                        # 檢查這個網址是否已經在 history.json 裡了？
                         if state_mgr.is_url_scanned(url):
                             print(f"  ⏭️ [重複攔截] 標題: {title[:40]}... | 網址: {url}")
                             continue  
                             
-                        # 沒看過的話，立刻登記到記憶體，然後放行
-                        state_mgr.add_record(url, event="已交由AI分析")
+                        # 🚨 核心修改：先不要在這裡執行 add_record！只把它加進清單。
                         final_news.append(news)
                 
-                # Step 3 & 4: 分析與推送
                 if final_news:
                     analyzed_news = []
-                    
-                    # 分批交給 AI 分析 (每批 20 條)
                     batch_size = 20
+                    
                     for i in range(0, len(final_news), batch_size):
                         batch = final_news[i:i+batch_size]
                         print(f"🧠 開始將第 {i+1} 至 {min(i+batch_size, len(final_news))} 條新聞送入 AI 分析...")
+                        
                         batch_results = analyzer.analyze(batch)
-                        if batch_results:
-                            analyzed_news.extend(batch_results)
+                        
+                        # 🚨 核心修改：判斷 AI 是否成功分析 (回傳不是 None)
+                        if batch_results is not None:
+                            # 既然 AI 成功看過了 (不管有沒有達標)，這批新聞才正式寫入記憶體
+                            for news in batch:
+                                state_mgr.add_record(news.get("link"), event="已完成AI判斷")
+                                
+                            if batch_results:
+                                analyzed_news.extend(batch_results)
+                        else:
+                            print(f"⚠️ 第 {i+1} 批次 AI 分析崩潰，未寫入記憶體，將於下輪排程重試。")
                     
-                    # 加入推送日期與時間，並一次性打包推送
                     if analyzed_news:
                         push_time = datetime.now(HKT).strftime('%Y-%m-%d %H:%M:%S')
                         print(f"🚀 AI 共篩選出 {len(analyzed_news)} 條達標訊號，準備合併推送...")
-                        
-                        push_payload = {
-                            "push_time": push_time,
-                            "news_list": analyzed_news
-                        }
-                        # 將封裝好的時間和資料清單交給飛書
+                        push_payload = {"push_time": push_time, "news_list": analyzed_news}
                         notifier.push(push_payload)
                     else:
-                        print("✨ AI 深度分析完成，篩選出 0 條達標重磅訊號！")
+                        print("✨ AI 深度分析完成，本次無達標重磅訊號！")
                 else:
                     print("🤷‍♂️ 本次抓取沒有符合 [港股+利好] 條件的【全新】資訊，跳過 AI 分析。")
             
-            # 保存歷史紀錄
             state_mgr.save()
             
-            # 計算下一次排程
             now = datetime.now(HKT)
             if now >= end_time:
                 break
