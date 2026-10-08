@@ -65,7 +65,7 @@ SOURCE_CONFIGS = [
         "url": "https://asia.nikkei.com/business/markets",
         "selectors": ["article.article h2 a", "h2.headline a", ".article-title a"],
     },
-# 🚨 升級：智通財經_港股專頁 (加入更廣泛的列表選擇器)
+    # 🚨 升級：智通財經_港股專頁 (加入更廣泛的列表選擇器)
     {
         "id": "zhitong_hk",
         "name": "智通財經_港股",
@@ -79,18 +79,14 @@ SOURCE_CONFIGS = [
             ".news-list a"
         ],
     },
-    # 🚨 升級：智通財經_7x24快訊 (加入專屬快訊文字框選擇器)
+    # 🚨 升級：智通財經_7x24快訊 (已套用從 HTML 源碼破解的精準標籤)
     {
         "id": "zhitong_7x24",
         "name": "智通財經_7x24",
         "url": "https://www.zhitongcaijing.com/immediately.html?type=ganggu",
         "selectors": [
-            ".live-item", 
-            ".live-list-item", 
-            ".immediately-list li", 
-            ".news-txt", 
-            "div.live-content",
-            "li.live-item-wrap"
+            "div.allday-item-content", 
+            "div.allday-item"
         ],
         "is_flash": True,  # 標記為快訊，啟用虛擬網址邏輯
     },
@@ -156,7 +152,7 @@ class HKStockScraper:
                         continue
                     
                     # 排除網站導覽列與雜訊按鈕
-                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼", "版權所有"]
+                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼", "版權所有", "编辑解读", "添加解读", "查看解读"]
                     if any(w in title.lower() for w in skip_words):
                         continue
 
