@@ -107,8 +107,8 @@ class HKStockScraper:
         if element is None:
             return ""
         try:
-            # 嘗試取得元素內所有文字
-            text = "".join(element.css("::text").getall())
+            # 🚨 核心升級：使用 xpath 穿透所有子標籤 (b, div, span) 提取深層文字
+            text = "".join(element.xpath(".//text()").getall())
             if text and text.strip():
                 return text.strip()
         except Exception:
