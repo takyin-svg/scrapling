@@ -19,10 +19,10 @@ class GeminiAnalyzer:
         
         【判斷標準】
         1. 事件已正式落實，實質改變公司盈利或估值。
-        2. 評分 (score): 95-100(極重大)；85-94(明確重大利好)；<85(忽略，設為 is_major_bullish: false)。
+        2. 評分 (score): 95-100(極重大)；80-94(明確重大利好)；<80(忽略，設為 is_major_bullish: false)。
         3. 置信度 (confidence): 95=官方；90=權威媒體；60=市場消息。
         4. 實體補全 (Entity Resolution): 
-           - 若新聞僅提及公司名稱，請補齊對應的港股代號 (stock_code，如 0700.HK)。
+           - 若新聞僅提及公司名稱，請補齊對應的港股代號 (stock_code，如 00700.HK)。
            - 若新聞僅提及代號，請補齊其個股中文名稱 (stock_name)。
            - 若為大盤宏觀、行業泛指且無具體受惠個股，請在代號與名稱皆填「無」。
 
@@ -86,7 +86,7 @@ class GeminiAnalyzer:
                     is_macro_news = (stock_code in ["", "無", "None"]) and (stock_name in ["", "無", "None"])
                     display_name = f"{stock_name}({stock_code})" if not is_macro_news else "宏觀無個股"
                     
-                    if is_macro_news or not is_bullish or score < 85:
+                    if is_macro_news or not is_bullish or score < 80:
                         print(f"  ❌ [淘汰] {display_name} | 評分: {score} | {title_preview}... | 原因: {reason}")
                     else:
                         print(f"  ✅ [達標] {display_name} | 評分: {score} | {title_preview}... | 理由: {reason}")
