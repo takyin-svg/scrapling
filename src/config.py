@@ -8,7 +8,6 @@ FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK")
 HISTORY_FILE = "data/history.json"
 
 # --- AI 模型設定 ---
-# 🚨 記得配合修改 analyzer.py 使用這個新變數，解決 404 錯誤
 AI_MODEL = "gemini-3.5-flash-lite"
 
 # --- AI 與推送門檻 ---
@@ -92,7 +91,7 @@ NEWS_SOURCES = [
         "fetcher": "fetcher",
         "timeout": 15,
     },
-    # ---------- HTML 類 (使用 StealthyFetcher 渲染) ----------
+    # ---------- HTML 類 (與 scraper.py 同步) ----------
     {
         "name": "新浪港股",
         "url": "https://finance.sina.com.cn/stock/hkstock/",
@@ -101,15 +100,58 @@ NEWS_SOURCES = [
         "timeout": 30,
     },
     {
-        "name": "智通财经",
-        "url": "https://www.zhitongcaijing.com/",
+        "name": "格隆汇",
+        "url": "https://www.gelonghui.com/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
+    {
+        "name": "信报财经",
+        "url": "https://www.hkej.com/instantnews/hongkong",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
+    {
+        "name": "CNBC Asia",
+        "url": "https://www.cnbc.com/markets/asia-markets/",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
+    {
+        "name": "MarketWatch Asia",
+        "url": "https://www.marketwatch.com/markets/asia",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
+    {
+        "name": "Nikkei Asia",
+        "url": "https://asia.nikkei.com/business/markets",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 30,
+    },
+    {
+        "name": "智通财经_港股",
+        "url": "https://www.zhitongcaijing.com/?index=ganggu&page=1",
         "kind": "html",
         "fetcher": "stealth",
         "timeout": 45,
     },
     {
-        "name": "格隆汇",
-        "url": "https://www.gelonghui.com/",
+        "name": "智通财经_7x24",
+        "url": "https://www.zhitongcaijing.com/immediately.html?type=ganggu",
+        "kind": "html",
+        "fetcher": "stealth",
+        "timeout": 45,
+        "is_flash": True,  # 🚨 標記為快訊，啟用虛擬網址邏輯
+    },
+    {
+        "name": "华盛通资讯",
+        "url": "https://www.hstong.com/news",
         "kind": "html",
         "fetcher": "stealth",
         "timeout": 30,
@@ -120,5 +162,5 @@ NEWS_SOURCES = [
         "kind": "html",
         "fetcher": "stealth",
         "timeout": 30,
-    },
+    }
 ]
