@@ -26,12 +26,14 @@ class FeishuNotifier:
             stock_code = news.get('stock_code', '無')
             stock_name = news.get('stock_name', '無')
             score = news.get('score', 0)
+            original_title = news.get('title', '無標題')  # 提取原文標題
             
             # 獲取新聞發布時間 (相容各種爬蟲可能的 key 命名)
             publish_time = news.get('time', news.get('publish_time', news.get('pubDate', '未知時間')))
             
             combined_text += f"**【{idx}】{stock_name} ({stock_code})** - 評分: {score}\n"
             combined_text += f"🕒 **發布時間:** {publish_time}\n"
+            combined_text += f"📰 **原文標題:** {original_title}\n"  # 增加原文標題顯示
             combined_text += f"📌 **事件:** {news.get('core_event', '無')}\n"
             combined_text += f"💡 **理由:** {news.get('reason', '無')}\n"
             combined_text += f"🔗 [點擊查看原文]({news.get('url', '')})\n\n"
