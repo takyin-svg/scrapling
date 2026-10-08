@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-港股量化新聞爬蟲模組 (HK Stock News Polite Scraper) - V2.1 終極防線版
+港股量化新聞爬蟲模組 (HK Stock News Polite Scraper) - V2.2 快訊支援版
 特色：
 - 嚴格遵守禮貌爬取 (3~7 秒隨機延遲)
 - 403/429/50X 錯誤優雅降級
 - 新增「泛用型 <a> 標籤」終極備用防線，無懼網站改版
+- 新增「7x24快訊」支援，自動生成 Hash 虛擬網址解決去重問題
 - 完美對接 Gemini Analyzer
 """
 
@@ -12,6 +13,7 @@ import json
 import logging
 import random
 import time
+import hashlib
 from typing import Any, Dict, List
 from urllib.parse import urljoin
 
@@ -25,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("HKStockScraper")
 
-# 8 大精選源頭配置 (移除強力封鎖的 Bloomberg)
+# 精選源頭配置
 SOURCE_CONFIGS = [
     {
         "id": "sina_hk",
@@ -63,11 +65,21 @@ SOURCE_CONFIGS = [
         "url": "https://asia.nikkei.com/business/markets",
         "selectors": ["article.article h2 a", "h2.headline a", ".article-title a"],
     },
+    # 🚨 升級：智通財經_港股專頁
     {
-        "id": "zhitong",
-        "name": "智通財經",
-        "url": "https://www.zhitongcaijing.com/",
+        "id": "zhitong_hk",
+        "name": "智通財經_港股",
+        "url": "https://www.zhitongcaijing.com/?index=ganggu&page=1",
         "selectors": ["div.res-list a", ".news-item a", "div.content-box a"],
+    },
+    # 🚨 新增：智通財經_7x24快訊
+    {
+        "id": "zhitong_7x24",
+        "name": "智通財經_7x24",
+        "url": "https://www.zhitongcaijing.com/immediately.html?type=ganggu",
+        # 快訊通常包在 li 或特定的 div 中
+        "selectors": ["ul.list-wrap li", ".live-news-list li", "div.live-item", "div.wrap-con"],
+        "is_flash": True, # 標記為快訊，啟用虛擬網址邏輯
     },
     {
         "id": "hstong",
@@ -86,7 +98,8 @@ class HKStockScraper:
         if element is None:
             return ""
         try:
-            text = element.css("::text").get()
+            # 嘗試取得元素內所有文字
+            text = "".join(element.css("::text").getall())
             if text and text.strip():
                 return text.strip()
         except Exception:
@@ -108,12 +121,12 @@ class HKStockScraper:
             return element.attrib.get("href", "").strip()
         return ""
 
-    def _parse_elements(self, page_adaptor: Any, base_url: str, selectors: List[str], source_name: str) -> List[Dict[str, str]]:
+    def _parse_elements(self, page_adaptor: Any, base_url: str, selectors: List[str], source_name: str, is_flash: bool = False) -> List[Dict[str, str]]:
         items = []
         seen_links = set()
 
-        # 🚨 核心改動：將泛用的 "a" 標籤作為終極備用防線，無懼網站改版
-        active_selectors = selectors + ["a"]
+        # 針對快訊，我們直接抓取區塊 (不強制要求 a 標籤)；一般新聞則補上泛用型 a 標籤
+        active_selectors = selectors if is_flash else selectors + ["a"]
 
         for sel in active_selectors:
             try:
@@ -125,23 +138,32 @@ class HKStockScraper:
                     title = self._safe_get_text(el)
                     raw_href = self._safe_get_href(el)
 
-                    # 標題太短 (少於 8 個字) 或無效連結直接濾除
-                    if not title or len(title) < 8 or not raw_href or raw_href.startswith("javascript:"):
+                    # 標題太短 (少於 15 個字，特別是快訊需要足夠長度) 直接濾除
+                    if not title or len(title) < 15:
                         continue
                     
                     # 排除網站導覽列與雜訊按鈕
-                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼"]
+                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼", "版權所有"]
                     if any(w in title.lower() for w in skip_words):
                         continue
 
-                    full_url = urljoin(base_url, raw_href)
+                    # 🚨 快訊處理邏輯：無實體連結時，自動生成 MD5 虛擬網址
+                    if is_flash:
+                        # 擷取前 10 碼 MD5 作為唯一識別碼
+                        content_hash = hashlib.md5(title.encode('utf-8')).hexdigest()[:10]
+                        full_url = f"{base_url}#flash_{content_hash}"
+                    else:
+                        if not raw_href or raw_href.startswith("javascript:"):
+                            continue
+                        full_url = urljoin(base_url, raw_href)
+
                     if full_url in seen_links:
                         continue
 
                     seen_links.add(full_url)
                     items.append({
                         "source": source_name,
-                        "title": title,
+                        "title": title,  # 這裡對於快訊來說，會包含完整時間與內容，如 "15:26:27 【港股异动】..."
                         "link": full_url,
                     })
 
@@ -157,6 +179,7 @@ class HKStockScraper:
     def fetch_source(self, config: Dict[str, Any]) -> List[Dict[str, str]]:
         name = config["name"]
         url = config["url"]
+        is_flash = config.get("is_flash", False)
         logger.info(f"開始抓取: {name} ({url})")
 
         try:
@@ -175,6 +198,7 @@ class HKStockScraper:
                 base_url=url,
                 selectors=config["selectors"],
                 source_name=name,
+                is_flash=is_flash # 傳入快訊標記
             )
 
             logger.info(f"✅ [{name}] 成功取得 {len(news_list)} 則新聞標題。")
