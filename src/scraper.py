@@ -147,13 +147,19 @@ class HKStockScraper:
                     title = self._safe_get_text(el)
                     raw_href = self._safe_get_href(el)
 
+                    # 🚨 修正 1：先用橡皮擦把快訊區塊裡的「UI 按鈕文字」擦掉，不要誤殺新聞
+                    noise_words = ["编辑解读", "添加解读", "查看解读", "\n", "\r"]
+                    for nw in noise_words:
+                        title = title.replace(nw, "")
+                    title = title.strip()
+
                     # 標題太短 (少於 15 個字，特別是快訊需要足夠長度) 直接濾除
                     if not title or len(title) < 15:
                         continue
                     
-                    # 排除網站導覽列與雜訊按鈕
-                    skip_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼", "版權所有", "编辑解读", "添加解读", "查看解读"]
-                    if any(w in title.lower() for w in skip_words):
+                    # 🚨 修正 2：遇到這些「無效導覽列」關鍵字，才真正把整條丟棄
+                    discard_words = ["登入", "登錄", "login", "register", "首頁", "下載", "app", "about", "忘記密碼", "版權所有"]
+                    if any(w in title.lower() for w in discard_words):
                         continue
 
                     # 🚨 快訊處理邏輯：無實體連結時，自動生成 MD5 虛擬網址
