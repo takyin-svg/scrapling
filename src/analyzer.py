@@ -10,7 +10,7 @@ class GeminiAnalyzer:
             raise ValueError("GEMINI_API_KEY 未設定")
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
-    def analyze(self, news_list: list[dict]) -> list[dict]:
+    def analyze(self, news_list: list[dict]) -> list[dict] | None:
         if not news_list:
             return []
 
@@ -75,7 +75,6 @@ class GeminiAnalyzer:
                 
                 batch_results = json.loads(res.text)
                 
-                # 決策日誌：檢查實體補全、硬性過濾與評分結果
                 for item in batch_results:
                     title_preview = item.get("title", "")[:20].replace("\n", "")
                     stock_code = item.get("stock_code", "")
@@ -84,19 +83,16 @@ class GeminiAnalyzer:
                     score = item.get("score", 0)
                     reason = item.get("reason", "無詳細理由")
                     
-                    # 判斷是否為純宏觀新聞
                     is_macro_news = (stock_code in ["", "無", "None"]) and (stock_name in ["", "無", "None"])
                     display_name = f"{stock_name}({stock_code})" if not is_macro_news else "宏觀無個股"
                     
-                    if is_macro_news:
-                        print(f"  ❌ [淘汰] {display_name} | 評分: {score} | {title_preview}... | 原因: {reason}")
-                    elif not is_bullish or score < 85:
+                    if is_macro_news or not is_bullish or score < 85:
                         print(f"  ❌ [淘汰] {display_name} | 評分: {score} | {title_preview}... | 原因: {reason}")
                     else:
                         print(f"  ✅ [達標] {display_name} | 評分: {score} | {title_preview}... | 理由: {reason}")
                         analyzed_results.append(item)
                         
-                break  # 成功解析則跳出重試迴圈
+                return analyzed_results  # 成功解析，回傳結果 (跳出函式)
                 
             except Exception as e:
                 error_msg = str(e)
@@ -106,6 +102,6 @@ class GeminiAnalyzer:
                     time.sleep(wait_time)
                 else:
                     print(f"  ❌ AI 批次分析出錯: {error_msg}")
-                    break 
+                    return None # 🚨 核心修改：遇到 JSON 截斷或其他致命錯誤，直接回傳 None
                     
-        return analyzed_results
+        return None # 若重試 3 次都因為頻繁請求而失敗，也回傳 None
