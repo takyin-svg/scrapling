@@ -46,7 +46,7 @@ class GeminiAnalyzer:
             "stock_name": "個股中文或無", 
             "core_event": "核心事件限10字",
             "is_major_bullish": true/false, 
-            "score": 88, 
+            "score": 80, 
             "confidence": 90,
             "category": "利好分類", 
             "urgency": "Immediate/1-3 Days/Long Term",
