@@ -60,7 +60,7 @@ class GeminiAnalyzer:
         analyzed_results = []
         
         max_retries = 3
-        wait_times = [30, 60, 120] 
+        wait_times = [10, 30, 60] # 調整了冷卻時間，如果只是格式錯誤，10秒後重試通常就會好
         
         for attempt in range(1, max_retries + 1):
             try:
@@ -92,16 +92,18 @@ class GeminiAnalyzer:
                         print(f"  ✅ [達標] {display_name} | 評分: {score} | {title_preview}... | 理由: {reason}")
                         analyzed_results.append(item)
                         
-                return analyzed_results  # 成功解析，回傳結果 (跳出函式)
+                return analyzed_results
                 
             except Exception as e:
                 error_msg = str(e)
-                if "503" in error_msg or "429" in error_msg:
+                print(f"  ⚠️ [第 {attempt} 次嘗試失敗] AI 解析或連線異常: {error_msg}")
+                
+                if attempt < max_retries:
                     wait_time = wait_times[attempt - 1]
-                    print(f"  ⏳ Google API 請求頻繁 (503/429)，冷卻 {wait_time} 秒後進行第 {attempt}/{max_retries} 次重試...")
+                    print(f"  ⏳ 系統將於 {wait_time} 秒後要求 AI 重新分析...")
                     time.sleep(wait_time)
                 else:
-                    print(f"  ❌ AI 批次分析出錯: {error_msg}")
-                    return None # 🚨 核心修改：遇到 JSON 截斷或其他致命錯誤，直接回傳 None
+                    print(f"  ❌ 連續 {max_retries} 次分析失敗，觸發安全回滾機制，留待下輪處理。")
+                    return None
                     
-        return None # 若重試 3 次都因為頻繁請求而失敗，也回傳 None
+        return None
