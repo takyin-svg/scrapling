@@ -65,21 +65,34 @@ SOURCE_CONFIGS = [
         "url": "https://asia.nikkei.com/business/markets",
         "selectors": ["article.article h2 a", "h2.headline a", ".article-title a"],
     },
-    # 🚨 升級：智通財經_港股專頁
+# 🚨 升級：智通財經_港股專頁 (加入更廣泛的列表選擇器)
     {
         "id": "zhitong_hk",
         "name": "智通財經_港股",
         "url": "https://www.zhitongcaijing.com/?index=ganggu&page=1",
-        "selectors": ["div.res-list a", ".news-item a", "div.content-box a"],
+        "selectors": [
+            ".list-item a", 
+            ".article-item a", 
+            ".recommend-article-list a", 
+            "div.content-wrap a", 
+            "div.res-list a",
+            ".news-list a"
+        ],
     },
-    # 🚨 新增：智通財經_7x24快訊
+    # 🚨 升級：智通財經_7x24快訊 (加入專屬快訊文字框選擇器)
     {
         "id": "zhitong_7x24",
         "name": "智通財經_7x24",
         "url": "https://www.zhitongcaijing.com/immediately.html?type=ganggu",
-        # 快訊通常包在 li 或特定的 div 中
-        "selectors": ["ul.list-wrap li", ".live-news-list li", "div.live-item", "div.wrap-con"],
-        "is_flash": True, # 標記為快訊，啟用虛擬網址邏輯
+        "selectors": [
+            ".live-item", 
+            ".live-list-item", 
+            ".immediately-list li", 
+            ".news-txt", 
+            "div.live-content",
+            "li.live-item-wrap"
+        ],
+        "is_flash": True,  # 標記為快訊，啟用虛擬網址邏輯
     },
     {
         "id": "hstong",
